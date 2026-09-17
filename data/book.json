@@ -1,0 +1,13 @@
+{
+  "title": "더이웃 SNS 가을호",
+  "subtitle": "새물결교회 50주년 기념 계간지 · 더 닮음, 그리고 물듦",
+  "issue": "2026 가을호",
+  "pageWidth": 1200,
+  "pageHeight": 1695,
+  "pageCount": 76,
+  "pages": "pages/p{NNN}.webp",
+  "thumbs": "thumbs/p{NNN}.webp",
+  "music": "audio/bgm.mp3",
+  "search": "data/search.json",
+  "toc": "data/toc.json"
+}
