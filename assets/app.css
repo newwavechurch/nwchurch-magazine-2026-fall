@@ -540,48 +540,49 @@ li:focus-visible{outline:2px solid #ffd24d;outline-offset:2px}
 .mtop,.mbar,.sheet,.mfab,.zoom__mbar{display:none}
 @media (max-width:899px){ .fsprompt{display:none} }
 
-/* ── 한 장 넘김 엔진 ─────────────────────────────────── */
+/* ── 한 장 넘김 엔진 (모서리 말림) ───────────────────── */
 .mf{
   position:relative;overflow:hidden;
   background:#fff;
   box-shadow:var(--page-shadow);
-  perspective:1900px;
-  perspective-origin:50% 50%;
   touch-action:none;
-  --mf-sh:0;
+  --mf-cast:.3;
 }
 /* 넘기는 도중 겹이 숨겨지면 pointerdown 대상이 사라져 브라우저가 pointercancel 을
    던진다. 겹은 포인터를 받지 않게 해서 대상이 늘 .mf 로 고정되게 한다. */
-.mf .hl{z-index:2}    /* base(1) 위, 넘어가는 겹(3) 아래 */
-.mf__img,.mf__flat,.mf__flap,.mf__shade{position:absolute;top:0;height:100%;pointer-events:none}
-.mf__img{left:0;width:100%;object-fit:cover;background:#fff;display:block}
+.mf .hl{z-index:2}    /* base(1) 위, 넘어가는 겹(3~) 아래 */
+.mf__img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;background:#fff;display:block;pointer-events:none}
 .mf__under{z-index:0}
 .mf__base{z-index:1}
-.mf__shade{
-  left:0;width:120px;z-index:2;pointer-events:none;
-  background:linear-gradient(90deg,rgba(0,0,0,.42),rgba(0,0,0,0));
-  opacity:var(--mf-sh);
+/* 들린 자락이 아래 쪽에 드리우는 그림자 — 접힘선에서 바깥으로 번진다 */
+.mf__cast{
+  position:absolute;left:0;top:0;z-index:3;pointer-events:none;
+  transform-origin:0 0;will-change:transform;
+  background:linear-gradient(90deg,rgba(0,0,0,1) 0%,rgba(0,0,0,.55) 22%,rgba(0,0,0,.18) 55%,rgba(0,0,0,0) 100%);
+  opacity:var(--mf-cast);
 }
-.mf__flat{left:0;z-index:3;overflow:hidden;background:#fff}
-.mf__flat img{position:absolute;left:0;top:0;height:100%;max-width:none;display:block;object-fit:cover}
-.mf__flap{
-  z-index:4;transform-origin:left center;transform-style:preserve-3d;
-  will-change:transform;
-}
-.mf__face{position:absolute;inset:0;overflow:hidden;backface-visibility:hidden;background:#fff}
-.mf__face--b{transform:rotateY(180deg)}
-.mf__face img{position:absolute;top:0;height:100%;max-width:none;display:block;object-fit:cover}
-/* 뒷면은 종이 너머로 비치듯 하얗게 눌러 준다 */
-.mf__paper{position:absolute;inset:0;background:rgba(255,255,255,.55)}
-/* 들린 종이가 빛을 받는 느낌 — 접힘선 쪽이 밝고 바깥으로 갈수록 어둡다 */
-.mf__face--f::after,.mf__face--b::after{
-  content:"";position:absolute;inset:0;pointer-events:none;opacity:var(--mf-sh);
-}
-.mf__face--f::after{
-  background:linear-gradient(90deg,rgba(255,255,255,.34) 0%,rgba(255,255,255,.06) 34%,rgba(0,0,0,.05) 62%,rgba(0,0,0,.3) 100%);
-}
-.mf__face--b::after{
-  background:linear-gradient(90deg,rgba(0,0,0,.28) 0%,rgba(0,0,0,.05) 40%,rgba(255,255,255,.1) 72%,rgba(255,255,255,.3) 100%);
+/* 접힘선으로 자르는 겹: 대각선 길이의 정사각형을 돌려 반평면을 만든다 */
+.mf__mask{position:absolute;overflow:hidden;pointer-events:none;will-change:transform;backface-visibility:hidden}
+.mf__mask--f{z-index:4}
+.mf__mask--b{z-index:5}
+.mf__pg{position:absolute;left:0;top:0;display:block;max-width:none;object-fit:cover;background:#fff;transform-origin:0 0;will-change:transform}
+.mf__bp{position:absolute;left:0;top:0;overflow:hidden;background:#fff;transform-origin:0 0;will-change:transform;
+  box-shadow:0 0 11px rgba(0,0,0,.32)}   /* 들린 자락이 아래 쪽에 드리우는 그림자 */
+.mf__bp img{position:absolute;left:0;top:0;display:block;max-width:none;object-fit:cover}
+/* 뒷면은 종이 너머로 비치듯 하얗게 눌러 준다 (레퍼런스: 이미지 불투명도 0.2) */
+.mf__white{position:absolute;inset:0;background:rgba(255,255,255,.8);pointer-events:none}
+/* 접힘선 쪽 광택과 그늘 — 접힘선에 붙어 밝은 띠, 바깥 모서리로 갈수록 옅은 그늘 */
+.mf__bshade{
+  position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform;pointer-events:none;
+  background:linear-gradient(90deg,
+    rgba(0,0,0,.28) 0,
+    rgba(0,0,0,.1) 1%,
+    rgba(255,255,255,.55) 3%,
+    rgba(255,255,255,.24) 8%,
+    rgba(255,255,255,.05) 22%,
+    rgba(0,0,0,.04) 42%,
+    rgba(0,0,0,.12) 72%,
+    rgba(0,0,0,.2) 100%);
 }
 
 @media (max-width:899px){

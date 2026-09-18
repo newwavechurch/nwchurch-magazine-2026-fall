@@ -11,8 +11,6 @@
   var VOL_KEY = 'nwc-fall-bgm-vol';
   var SFX_KEY = 'nwc-fall-flipsound';
   var SFX_VOLUME = 0.6;         // 원본이 작게 녹음돼 있어 조금 높게 잡는다
-  var FLIP_MS = 300;            // 여름호 flippingTime 0.3초
-  var TURN_RATIO = 0.22;        // 폭의 22% 미만에서 놓으면 제자리로
   var FLICK_V = 0.3;            // px/ms — 이보다 빠르면 짧게 당겨도 넘긴다
   var HINT_KEY = 'nwc-fall-immersive-hint';
   var FS_HINT_KEY = 'nwc-fall-fs-hint';
@@ -317,21 +315,34 @@
   }
 
 
-  /* ── 모바일 한 장 넘김 엔진 ────────────────────────────
+  /* ── 모바일 한 장 넘김 엔진 (모서리 말림) ───────────────
      StPageFlip 은 (1) 터치 시작 위치로 방향을 정하고 — 왼쪽 절반에서 시작하면
      왼쪽으로 밀어도 뒤로 간다 — (2) 한 장 모드의 뒤로 넘김을 좁은 쐐기로 그린다.
      둘 다 라이브러리 내부 렌더러 문제라 모바일만 직접 그린다. 데스크톱 펼침
      모드는 StPageFlip 그대로다.
 
-     모양 규칙(여름호 프레임을 재서 맞춘 값):
-       진행도 p(0~1) → 접힘선 c = W(1-p), 접힌 자락 길이 L = W-c,
-       자락은 왼쪽 모서리를 축으로 -180p 도 회전.
-       p<0.5 면 자락의 앞면(펼쳐진 쪽), p>0.5 면 뒷면(거울상)이 보인다.
+     모양 규칙 — 레퍼런스(FlipHTML5 폰 템플릿)를 프레임 단위로 재서 맞춘 값이다.
+       · 종이는 "모서리를 집어 접는" 모형이다. 고정 모서리 C0 와 손끝 P 를 두면
+         접힘선은 선분 C0→P 의 수직이등분선이고, 접힌 자락은 그 선에 대한 거울상이다.
+         (평면 rotateY 모형과 달리 자락이 납작해지지 않고 실제 종이처럼 접힌다.)
+       · C0 는 책 높이의 위 20% 에서 잡으면 위 모서리, 아래 20% 면 아래 모서리,
+         가운데면 손끝 높이 — 즉 가운데를 잡으면 접힘선이 수직이 된다.
+       · 손끝은 바로 따라오지 않고 45ms 시정수로 따라붙는다.
+       · 놓으면 모서리가 끝점까지 직선으로 가며 easeOutQuad(측정값)로 감속한다.
      방향 규칙: 손가락이 왼쪽으로 가면 다음, 오른쪽으로 가면 이전. 시작 위치 무관. */
+  var MF_CORNER_ZONE = 0.20;   // 위/아래 20% 안에서 잡으면 모서리 말림
+  var MF_FOLLOW_TAU = 45;      // ms — 손끝 따라붙는 시정수
+  var MF_TURN = 0.16;          // 폭의 16% 미만에서 놓으면 제자리로 (레퍼런스 14~17%)
+
   var mf = {
-    root: null, under: null, base: null, shade: null,
-    flat: null, flatImg: null, flap: null, fImg: null, bImg: null,
-    W: 0, H: 0, dir: 0, dest: -1, p: 0, raf: 0, animating: false
+    root: null, under: null, base: null, cast: null,
+    maskF: null, pgF: null, maskB: null, bp: null, bImg: null, bShade: null,
+    W: 0, H: 0, D: 0, dir: 0, dest: -1, raf: 0, animating: false,
+    cx: 0, cy: 0,          // 고정 모서리 C0
+    px: 0, py: 0,          // 지금 그린 모서리 P
+    tx: 0, ty: 0,          // 손끝이 끌고 가는 목표 P
+    zone: 0,               // -1 위 모서리 · 0 수직 · 1 아래 모서리
+    follow: false, last: 0
   };
 
   function mfCreate() {
@@ -340,30 +351,44 @@
     d.innerHTML =
       '<img class="mf__img mf__under" alt="" decoding="async">' +
       '<img class="mf__img mf__base" alt="" decoding="async">' +
-      '<span class="mf__shade"></span>' +
-      '<div class="mf__flat"><img alt="" decoding="async"></div>' +
-      '<div class="mf__flap">' +
-        '<div class="mf__face mf__face--f"><img alt="" decoding="async"></div>' +
-        '<div class="mf__face mf__face--b"><img alt="" decoding="async"><span class="mf__paper"></span></div>' +
-      '</div>';
+      '<span class="mf__cast"></span>' +
+      '<div class="mf__mask mf__mask--f"><img class="mf__pg" alt="" decoding="async"></div>' +
+      '<div class="mf__mask mf__mask--b"><div class="mf__bp">' +
+        '<img alt="" decoding="async"><span class="mf__white"></span><span class="mf__bshade"></span>' +
+      '</div></div>';
     mf.root = d;
     mf.under = d.querySelector('.mf__under');
     mf.base = d.querySelector('.mf__base');
-    mf.shade = d.querySelector('.mf__shade');
-    mf.flat = d.querySelector('.mf__flat');
-    mf.flatImg = mf.flat.querySelector('img');
-    mf.flap = d.querySelector('.mf__flap');
-    mf.fImg = d.querySelector('.mf__face--f img');
-    mf.bImg = d.querySelector('.mf__face--b img');
+    mf.cast = d.querySelector('.mf__cast');
+    mf.maskF = d.querySelector('.mf__mask--f');
+    mf.pgF = d.querySelector('.mf__pg');
+    mf.maskB = d.querySelector('.mf__mask--b');
+    mf.bp = d.querySelector('.mf__bp');
+    mf.bImg = mf.bp.querySelector('img');
+    mf.bShade = d.querySelector('.mf__bshade');
     mfWire();
   }
 
   function buildMobileFlip(startIdx) {
     if (!mf.root) mfCreate();
     mf.W = layout.pw; mf.H = layout.ph;
-    mf.root.style.width = mf.W + 'px';
-    mf.root.style.height = mf.H + 'px';
-    [mf.flatImg, mf.fImg, mf.bImg].forEach(function (i) { i.style.width = mf.W + 'px'; });
+    mf.D = Math.ceil(Math.sqrt(mf.W * mf.W + mf.H * mf.H)) + 2;
+    var W = mf.W, H = mf.H, D = mf.D;
+    mf.root.style.width = W + 'px';
+    mf.root.style.height = H + 'px';
+    [mf.maskF, mf.maskB].forEach(function (m) {
+      m.style.left = (-D) + 'px';
+      m.style.top = ((H - D) / 2) + 'px';
+      m.style.width = D + 'px';
+      m.style.height = D + 'px';
+      m.style.transformOrigin = D + 'px ' + (D / 2) + 'px';
+    });
+    mf.pgF.style.width = W + 'px'; mf.pgF.style.height = H + 'px';
+    mf.bp.style.width = W + 'px'; mf.bp.style.height = H + 'px';
+    mf.bImg.style.width = W + 'px'; mf.bImg.style.height = H + 'px';
+    mf.cast.style.height = D + 'px';
+    mf.bShade.style.height = D + 'px';
+    mf.bShade.style.width = W + 'px';   // 자락이 접힘선에서 떨어질 수 있는 최대 거리
     el.stageInner.textContent = '';
     el.stageInner.appendChild(mf.root);
     mfIdle(Math.max(0, Math.min(total - 1, startIdx)));
@@ -372,21 +397,20 @@
 
   function mfIdle(idx) {
     cancelAnimationFrame(mf.raf);
-    mf.animating = false;
+    mf.raf = 0; mf.animating = false; mf.follow = false;
     current = idx;
     mf.base.src = pageSrc(idx);
     mf.base.hidden = false;
     mf.under.hidden = true;
-    mf.flat.hidden = true;
-    mf.flap.hidden = true;
-    mf.shade.hidden = true;
-    mf.dir = 0; mf.dest = -1; mf.p = 0;
-    mf.root.style.setProperty('--mf-sh', '0');
+    mf.cast.hidden = true;
+    mf.maskF.hidden = true;
+    mf.maskB.hidden = true;
+    mf.dir = 0; mf.dest = -1; mf.zone = 0;
     paintHighlight();
   }
 
   // dir: 1 = 다음 쪽, -1 = 이전 쪽
-  function mfPrepare(dir) {
+  function mfPrepare(dir, cornerY) {
     if (dir > 0 && current >= total - 1) return false;
     if (dir < 0 && current <= 0) return false;
     var moving = dir > 0 ? current : current - 1;
@@ -395,47 +419,117 @@
     mf.dest = dir > 0 ? current + 1 : current - 1;
     mf.under.src = pageSrc(under);
     var src = pageSrc(moving);
-    if (mf.flatImg.getAttribute('src') !== src) {
-      mf.flatImg.src = src; mf.fImg.src = src; mf.bImg.src = src;
-    }
+    if (mf.pgF.getAttribute('src') !== src) { mf.pgF.src = src; mf.bImg.src = src; }
+    mf.cx = mf.W; mf.cy = cornerY;
+    // 앞으로 넘길 때는 모서리가 오른쪽 끝에서, 뒤로 넘길 때는 왼쪽 끝에서 출발한다
+    mf.px = mf.tx = dir > 0 ? mf.W : -mf.W;
+    mf.py = mf.ty = cornerY;
     mf.under.hidden = false;
     mf.base.hidden = true;
-    mf.flat.hidden = false;
-    mf.flap.hidden = false;
-    mf.shade.hidden = false;
     clearHlNodes();          // 넘기는 동안에는 하이라이트를 걷는다 (상태는 유지)
+    mfRender();
     return true;
   }
 
-  function mfRender(p) {
-    p = p < 0 ? 0 : (p > 1 ? 1 : p);
-    mf.p = p;
-    var W = mf.W;
-    var c = W * (1 - p);
-    var L = W - c;
-    mf.flat.style.width = c + 'px';
-    mf.flat.style.visibility = c < 0.5 ? 'hidden' : '';
-    mf.flap.style.left = c + 'px';
-    mf.flap.style.width = L + 'px';
-    mf.flap.style.transform = 'rotateY(' + (-180 * p) + 'deg)';
-    mf.flap.style.visibility = L < 0.5 ? 'hidden' : '';
-    mf.fImg.style.left = (-c) + 'px';
-    mf.bImg.style.left = (-c) + 'px';
-    mf.shade.style.left = c + 'px';
-    mf.root.style.setProperty('--mf-sh', (Math.sin(Math.PI * p) * 0.85).toFixed(3));
+  function mfSetT(node, a, b, c, d, e, f) {
+    node.style.transform = 'matrix(' + a.toFixed(5) + ',' + b.toFixed(5) + ',' +
+      c.toFixed(5) + ',' + d.toFixed(5) + ',' + e.toFixed(2) + ',' + f.toFixed(2) + ')';
   }
 
-  function mfAnimate(toP, ms, done) {
+  // 모서리를 책 안쪽(경첩에서 폭 W 이내)으로 가둔다 — 종이는 늘어나지 않는다
+  function mfClamp() {
+    var dx = mf.tx, dy = mf.ty - mf.cy;
+    var r = Math.sqrt(dx * dx + dy * dy);
+    if (r > mf.W) { var s = mf.W / r; mf.tx = dx * s; mf.ty = mf.cy + dy * s; }
+    if (mf.tx > mf.W) mf.tx = mf.W;
+  }
+
+  function mfRender() {
+    var W = mf.W, H = mf.H, D = mf.D;
+    var vx = mf.px - mf.cx, vy = mf.py - mf.cy;
+    var len = Math.sqrt(vx * vx + vy * vy);
+    if (len < 0.8) {                       // 아직 안 접힘 — 움직이는 쪽만 그대로
+      mf.cast.hidden = true;
+      mf.maskB.hidden = true;
+      mf.maskF.hidden = false;
+      mfSetT(mf.maskF, 1, 0, 0, 1, W, 0);
+      mfSetT(mf.pgF, 1, 0, 0, 1, D - W, (D - H) / 2);
+      return;
+    }
+    var ux = vy / len, uy = -vx / len;      // 접힘선 방향
+    var wx = -vx / len, wy = -vy / len;     // 접힌 자락 쪽 법선
+    var mx = (mf.cx + mf.px) / 2, my = (mf.cy + mf.py) / 2;
+    var k = (W / 2 - mx) * wx + (H / 2 - my) * wy;
+    var tx = W / 2 - k * uy, ty = k * ux;
+    var cp = uy, sp = -ux;                  // cos φ, sin φ
+
+    mf.maskF.hidden = false; mf.maskB.hidden = false; mf.cast.hidden = false;
+    mfSetT(mf.maskF, cp, sp, -sp, cp, tx, ty);
+    mfSetT(mf.maskB, cp, sp, -sp, cp, tx, ty);
+
+    // 겹 안쪽 좌표로 되돌리는 변환: A = R(-φ)·Mr,  At = O + R(-φ)(cr - (0,H/2) - t)
+    function inv(gx, gy) { return [cp * gx + sp * gy, -sp * gx + cp * gy]; }
+    var g = inv(-tx, -H / 2 - ty);
+    mfSetT(mf.pgF, cp, -sp, sp, cp, D + g[0], D / 2 + g[1]);
+
+    // 뒷면: 접힘선에 대한 거울상
+    var m11 = ux * ux - uy * uy, m12 = 2 * ux * uy, m22 = uy * uy - ux * ux;
+    var crx = mx - (m11 * mx + m12 * my), cry = my - (m12 * mx + m22 * my);
+    var c1 = inv(m11, m12), c2 = inv(m12, m22);
+    var gb = inv(crx - tx, cry - H / 2 - ty);
+    mfSetT(mf.bp, c1[0], c1[1], c2[0], c2[1], D + gb[0], D / 2 + gb[1]);
+
+    // 그림자·광택 띠 — 접힘선 위에 놓고 법선 방향으로 눕힌다
+    var ox = mx - ux * D / 2, oy = my - uy * D / 2;
+    var pull = mf.dir > 0 ? (W - mf.px) : (mf.px + W);
+    var rel = Math.max(0, Math.min(2, pull / W));
+    var cw = Math.max(W * 0.02, Math.min(W * 0.21, W * (0.2278 * rel - 0.0154)));
+    mf.cast.style.width = cw.toFixed(1) + 'px';
+    mfSetT(mf.cast, wx, wy, ux, uy, ox, oy);
+    mfSetT(mf.bShade, wx, wy, ux, uy, ox, oy);
+    // 접힘선이 많이 기울수록(모서리만 살짝 집을수록) 그림자가 옅어진다
+    var lean = Math.abs(Math.atan2(sp, cp));
+    mf.root.style.setProperty('--mf-cast', (0.30 * Math.max(0.5, 1 - Math.max(0, lean - 0.35) / 0.8)).toFixed(3));
+  }
+
+  // 손끝을 따라붙는 루프 — 드래그 중에만 돈다
+  function mfFollowStep(now) {
+    if (!mf.follow) { mf.raf = 0; return; }
+    var dt = mf.last ? Math.min(64, now - mf.last) : 16;
+    mf.last = now;
+    var a = 1 - Math.exp(-dt / MF_FOLLOW_TAU);
+    mf.px += (mf.tx - mf.px) * a;
+    mf.py += (mf.ty - mf.py) * a;
+    mfRender();
+    mf.raf = requestAnimationFrame(mfFollowStep);
+  }
+  function mfFollowOn() {
+    if (mf.follow) return;
+    mf.follow = true; mf.last = 0;
     cancelAnimationFrame(mf.raf);
-    var fromP = mf.p, t0 = 0, dur = ms;
+    mf.raf = requestAnimationFrame(mfFollowStep);
+  }
+
+  // 놓았을 때 — 모서리가 끝점까지 직선으로 가며 easeOutQuad 로 감속한다 (측정값)
+  function mfAnimate(gx, gy, ms, done) {
+    cancelAnimationFrame(mf.raf);
+    mf.follow = false;
+    var sx = mf.px, sy = mf.py, t0 = 0;
     mf.animating = true;
     mf.raf = requestAnimationFrame(function step(now) {
       if (!t0) t0 = now;
-      var k = Math.min(1, (now - t0) / dur);
-      mfRender(fromP + (toP - fromP) * (1 - Math.pow(1 - k, 3)));
-      if (k < 1) mf.raf = requestAnimationFrame(step);
-      else { mf.animating = false; done(); }
+      var u = Math.min(1, (now - t0) / ms);
+      var q = 1 - (1 - u) * (1 - u);
+      mf.px = sx + (gx - sx) * q;
+      mf.py = sy + (gy - sy) * q;
+      mfRender();
+      if (u < 1) mf.raf = requestAnimationFrame(step);
+      else { mf.animating = false; mf.raf = 0; done(); }
     });
+  }
+  function mfDur(gx) {
+    var d = Math.abs(gx - mf.px) / (2 * mf.W);
+    return Math.round(Math.max(150, Math.min(330, 330 * d)));
   }
 
   function mfFinish() { var d = mf.dest; mfIdle(d); onPageChange(d, true); }
@@ -443,10 +537,10 @@
 
   function mfGo(dir) {
     if (mf.animating || !mf.root) return false;
-    if (!mfPrepare(dir)) return false;
-    mfRender(dir > 0 ? 0 : 1);
+    if (!mfPrepare(dir, mf.H / 2)) return false;
     playFlip();
-    mfAnimate(dir > 0 ? 1 : 0, FLIP_MS, mfFinish);
+    var gx = dir > 0 ? -mf.W : mf.W;
+    mfAnimate(gx, mf.H / 2, mfDur(gx), mfFinish);
     return true;
   }
 
@@ -478,8 +572,12 @@
     document.addEventListener('pointerdown', function (e) {
       if (!mfInside(e)) return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
+      var r = mf.root.getBoundingClientRect();
+      var ly = e.clientY - r.top;
       st = {
         id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now(),
+        rect: r, ly: ly,
+        zone: ly < mf.H * MF_CORNER_ZONE ? -1 : (ly > mf.H * (1 - MF_CORNER_ZONE) ? 1 : 0),
         lx: e.clientX, lt: Date.now(), vx: 0, dir: 0, blocked: false,
         onBtn: !!(e.target && e.target.closest && e.target.closest('button'))
       };
@@ -488,23 +586,33 @@
     document.addEventListener('pointermove', function (e) {
       if (!st || e.pointerId !== st.id || st.blocked) return;
       var dx = e.clientX - st.x, dy = e.clientY - st.y;
+      var lx = e.clientX - st.rect.left, ly = e.clientY - st.rect.top;
       if (!st.dir) {
         // 방향은 손가락이 간 쪽으로 정한다 (시작 위치는 보지 않는다)
         if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy)) return;
         var dir = dx < 0 ? 1 : -1;
-        if (!mfPrepare(dir)) {
+        // 뒤로 넘길 때는 레퍼런스도 늘 곧은 접힘선을 쓴다 (모서리를 집지 않는다)
+        var zone = dir < 0 ? 0 : st.zone;
+        var cy = zone < 0 ? 0 : (zone > 0 ? mf.H : ly);
+        if (!mfPrepare(dir, cy)) {
           st.blocked = true;
           edgeToast(dir > 0);
           return;
         }
         st.dir = dir;
+        mf.zone = zone;
+        mfFollowOn();
       }
       var now = Date.now();
       if (now > st.lt) {
         st.vx = (e.clientX - st.lx) / (now - st.lt);
         st.lx = e.clientX; st.lt = now;
       }
-      mfRender(st.dir > 0 ? (-dx / mf.W) : (1 - dx / mf.W));
+      // 가운데를 잡았으면 고정 모서리도 손끝 높이를 따라가 접힘선이 수직으로 남는다.
+      // 위·아래 모서리를 잡았으면 모서리는 고정이고 손끝만 따라가 접힘선이 기운다.
+      if (mf.zone === 0) mf.cy = ly;
+      mf.tx = lx; mf.ty = ly;
+      mfClamp();
       e.preventDefault();
     }, { passive: false, capture: true });
 
@@ -538,13 +646,19 @@
         return;
       }
       if (g.onBtn) swallowClick();
+      mf.follow = false;
+      // 판정은 손끝(tx) 기준으로 하되 그림은 따라오던 자리(px)에서 이어 간다 —
+      // 튕기듯 놓았을 때 종이가 손끝으로 순간이동하지 않게 한다
       var flick = g.dir > 0 ? g.vx < -FLICK_V : g.vx > FLICK_V;
-      var pulled = g.dir > 0 ? mf.p : 1 - mf.p;      // 얼마나 당겼나
-      if (flick || pulled >= TURN_RATIO) {
-        playFlip();
-        mfAnimate(g.dir > 0 ? 1 : 0, Math.round(FLIP_MS * (1 - pulled) + 60), mfFinish);
+      var pulled = (g.dir > 0 ? (mf.W - mf.tx) : (mf.tx + mf.W)) / mf.W;
+      var gy = mf.cy;
+      if (flick || pulled >= MF_TURN) {
+        playFlip();                                   // 레퍼런스도 놓는 순간 울린다
+        var gx = g.dir > 0 ? -mf.W : mf.W;
+        mfAnimate(gx, gy, mfDur(gx), mfFinish);
       } else {
-        mfAnimate(g.dir > 0 ? 0 : 1, 240, mfBack);   // 덜 당겼으면 제자리로
+        var bx = g.dir > 0 ? mf.W : -mf.W;
+        mfAnimate(bx, gy, mfDur(bx), mfBack);
       }
     }
     document.addEventListener('pointerup', release, true);
