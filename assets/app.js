@@ -1351,15 +1351,17 @@
     setMusic(!music.on);
   }
 
+  // 자동재생 정책에 막혀도 '켜짐' 상태는 유지한다 — 첫 상호작용에서 다시 시도한다
+  function tryPlay() {
+    var p = el.bgm.play();
+    if (p && p.catch) p.catch(function () { /* 정책상 막힘: arm 에서 재시도 */ });
+  }
+
   function setMusic(on) {
     music.on = on;
     prefSet(BGM_KEY, on ? 'on' : 'off');
-    if (on) {
-      var p = el.bgm.play();
-      if (p && p.catch) p.catch(function () { music.on = false; paintMusic(); });
-    } else {
-      el.bgm.pause();
-    }
+    if (on) tryPlay();
+    else el.bgm.pause();
     paintMusic();
   }
 
@@ -1377,15 +1379,18 @@
     });
     el.volRange.addEventListener('input', function () { setVolume(el.volRange.value, true); });
     el.volRange.addEventListener('change', function () { setVolume(el.volRange.value, true); });
+    // 기본 켜짐(여름호와 동일). 자동재생이 허용된 환경이면 바로 시작하고,
+    // 막히면 켜짐 표시를 유지한 채 첫 상호작용에서 시작한다
+    music.on = readMusicPref();
     paintMusic();
+    if (music.on) tryPlay();
 
-    // 브라우저 자동재생 정책: 첫 상호작용에서 시작
     var arm = function () {
       if (music.armed) return;
       music.armed = true;
       document.removeEventListener('pointerdown', arm, true);
       document.removeEventListener('keydown', arm, true);
-      if (music.available && readMusicPref()) setMusic(true);
+      if (music.available && music.on && el.bgm.paused) tryPlay();
     };
     document.addEventListener('pointerdown', arm, true);
     document.addEventListener('keydown', arm, true);
