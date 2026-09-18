@@ -239,6 +239,14 @@ li:focus-visible{outline:2px solid #ffd24d;outline-offset:2px}
   left:50%;top:50%;transform:translate(-50%,-50%);
   display:flex;gap:20px;
 }
+/* 가림막 클릭 말고도 눈에 보이는 닫기 길을 둔다 */
+.sound__close{
+  position:absolute;z-index:2;right:0;top:-46px;
+  width:38px;height:38px;display:grid;place-items:center;
+  border-radius:9px;color:rgba(255,255,255,.85);
+  background:rgba(13,13,13,.78);
+}
+.sound__close:hover{background:#0d0d0d;color:#fff}
 .tile{
   width:200px;
   display:flex;flex-direction:column;
@@ -766,6 +774,8 @@ li:focus-visible{outline:2px solid #ffd24d;outline-offset:2px}
   }
   .sound.is-open{transform:none}
   .sound.is-dragging{transition:none}
+  .sound__close{top:2px;right:8px;background:none;color:rgba(255,255,255,.72)}
+  .sound__close:hover{background:none;color:#fff}
   .sound .tile{
     width:auto;background:transparent;box-shadow:none;
     flex-direction:row;align-items:center;gap:14px;

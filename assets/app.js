@@ -442,9 +442,11 @@
     toggleImmersive();
   }
 
-  // 좌우 넘김 단추는 무대의 형제라 책 위에만 귀를 달면 그 위에서 시작한
-  // 드래그를 놓친다. 그래서 문서에서 받고 책 영역인지 좌표로 가린다.
-  var MF_SKIP = '.mbar,.mtop,.sheet,.sound,.zoom,.share,.scrim,.mfab,.panel,.deskbar';
+  // 드래그는 문서에서 받고 책 영역인지 좌표로 가린다 — 책 위에만 귀를 달면
+  // 무대의 형제인 UI 위에서 시작한 드래그를 놓치기 때문이다.
+  // 단, 넘김 단추(.nav)·처음/끝 단추(.edge) 위에서 시작한 드래그는 아예 받지 않는다.
+  // 받아 버리면 드래그가 끝난 뒤 click 을 삼켜야 하고, 그 삼킴이 다음 탭까지 먹는다.
+  var MF_SKIP = '.mbar,.mtop,.sheet,.sound,.zoom,.share,.scrim,.mfab,.panel,.deskbar,.nav,.edge';
 
   function mfInside(e) {
     if (!mobileMode || !mf.root || mf.animating) return false;
@@ -490,11 +492,24 @@
       e.preventDefault();
     }, { passive: false, capture: true });
 
-    // 단추 위에서 시작한 드래그가 끝난 뒤 클릭까지 겹쳐 두 장 넘어가지 않게 막는다
+    // 단추 위에서 시작한 드래그가 끝난 뒤 클릭까지 겹쳐 두 장 넘어가지 않게 막는다.
+    // 드래그가 click 을 만들지 않고 끝나는 경우(책 밖에서 놓기 등)가 있어 리스너가
+    // 남으면 다음 탭을 삼킨다 — 300ms 뒤 스스로 걷힌다.
+    var swallowOff = null;
     function swallowClick() {
-      document.addEventListener('click', function (e) {
+      if (swallowOff) swallowOff();
+      var timer = null;
+      var h = function (e) {
         e.stopPropagation(); e.preventDefault();
-      }, { capture: true, once: true });
+        swallowOff && swallowOff();
+      };
+      swallowOff = function () {
+        swallowOff = null;
+        clearTimeout(timer);
+        document.removeEventListener('click', h, true);
+      };
+      document.addEventListener('click', h, true);
+      timer = setTimeout(function () { swallowOff && swallowOff(); }, 300);
     }
 
     function release(e) {
@@ -639,6 +654,60 @@
     el.fab.style.top = (r.top + 12) + 'px';
   }
 
+  /* ── 모달 포커스 ──────────────────────────────────── */
+  // 시트·소리 모달·공유가 열리면 첫 조작 요소로 포커스를 옮기고 Tab 을 안에서 돌린다.
+  // 닫히면 열기 전에 포커스가 있던 단추로 되돌린다.
+  var FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  var MODAL_SEL = '.sheet,.sound,.share';
+  var focusReturn = null;
+
+  function focusables(node) {
+    return Array.prototype.filter.call(node.querySelectorAll(FOCUSABLE), function (n) {
+      return !n.hidden && n.offsetParent !== null;
+    });
+  }
+  function inModal(node) { return !!(node && node.closest && node.closest(MODAL_SEL)); }
+
+  function trapFocus(node) {
+    var a = document.activeElement;
+    // 시트끼리 갈아탈 때는 처음 눌렀던 단추를 그대로 기억한다
+    if (a && a !== document.body && !inModal(a)) focusReturn = a;
+    setTimeout(function () {
+      if (!node.contains(document.activeElement)) {
+        var list = focusables(node);
+        if (list.length) { try { list[0].focus(); } catch (e) { /* 포커스 불가 */ } }
+      }
+    }, 80);
+  }
+
+  function releaseFocus() {
+    if (isShareOpen() || sheetIsOpen() || isSoundOpen()) return;
+    var t = focusReturn;
+    focusReturn = null;
+    if (t && t.focus && document.contains(t)) { try { t.focus(); } catch (e) { /* 사라진 단추 */ } }
+  }
+
+  function activeModal() {
+    if (isShareOpen()) return $('share');
+    if (openSheetEl) return openSheetEl;
+    if (isSoundOpen()) return el.soundSheet;
+    return null;
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab') return;
+    var m = activeModal();
+    if (!m) return;
+    var list = focusables(m);
+    if (!list.length) return;
+    var first = list[0], last = list[list.length - 1];
+    var a = document.activeElement;
+    var outside = !m.contains(a);
+    if (e.shiftKey) {
+      if (outside || a === first) { last.focus(); e.preventDefault(); }
+    } else if (outside || a === last) { first.focus(); e.preventDefault(); }
+  }, true);
+
   /* ── 바텀시트 ─────────────────────────────────────── */
   var openSheetEl = null;
   function sheetIsOpen() { return !!openSheetEl; }
@@ -657,6 +726,7 @@
       el.scrim.classList.add('is-on');
     });
     if (node === el.sheet) pressSheetBtns();
+    trapFocus(node);
   }
 
   function hideSheet(quiet) {
@@ -667,7 +737,7 @@
     n.style.transform = '';
     document.body.classList.remove('sheet-open');
     pressSheetBtns();
-    if (!quiet) dropScrim();
+    if (!quiet) { dropScrim(); releaseFocus(); }
     setTimeout(function () { if (!n.classList.contains('is-open')) n.hidden = true; }, 300);
   }
 
@@ -820,6 +890,9 @@
   }
 
   /* ── 해시 딥링크 ──────────────────────────────────── */
+  // NOTE: replaceState 는 hashchange 를 발생시키지 않으므로 지금의 hashByUs 는
+  // 실제로 걸러 내는 일이 없다(사실상 죽은 가드). 히스토리 정책을 pushState 로
+  // 바꾸면 그때 필요해지므로 지금은 동작을 바꾸지 않고 남겨 둔다.
   var hashByUs = false;
   function setHash(idx) {
     var want = '#p=' + (spreadOf(idx)[0] + 1);
@@ -894,7 +967,7 @@
   document.querySelectorAll('[data-close]').forEach(function (b) {
     b.addEventListener('click', closePanel);
   });
-  el.scrim.addEventListener('click', function () { hideSheet(); closeShare(); closePanel(); });
+  el.scrim.addEventListener('click', function () { hideSheet(); closeShare(); closeSound(); closePanel(); });
 
   function jumpFromPanel(idx) {
     goTo(idx, false);
@@ -1014,6 +1087,24 @@
   /* ── 검색 ─────────────────────────────────────────── */
   function norm(s) { return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
 
+  // norm() 과 같은 규칙으로 정규화하면서 정규화 문자열의 각 글자가 원문 어디서
+  // 왔는지 기록한다. 매칭은 norm 으로, 표시는 raw 로 하기 위한 다리.
+  function normWithMap(s) {
+    var raw = String(s || '');
+    var out = '', map = [];
+    var pendingSpace = false, started = false;
+    for (var i = 0; i < raw.length; i++) {
+      var c = raw[i];
+      if (/\s/.test(c)) { if (started) pendingSpace = true; continue; }
+      if (pendingSpace) { out += ' '; map.push(i); pendingSpace = false; }
+      var lc = c.toLowerCase();
+      for (var k = 0; k < lc.length; k++) { out += lc[k]; map.push(i); }
+      started = true;
+    }
+    map.push(raw.length);           // 끝 경계
+    return { raw: raw, norm: out, map: map };
+  }
+
   function runSearch(ctx) {
     var raw = ctx.input.value;
     var q = norm(raw);
@@ -1030,7 +1121,7 @@
       var at = rec.norm.indexOf(q);
       if (at === -1) continue;
       hits++;
-      frag.appendChild(resultRow(rec.page, rec.norm, at, q));
+      frag.appendChild(resultRow(rec, at, q));
     }
     out.appendChild(frag);
     empty.hidden = hits > 0;
@@ -1038,32 +1129,55 @@
     count.textContent = hits + '개 쪽에서 찾았습니다';
   }
 
-  function resultRow(page, text, at, q) {
+  function marked(parent, s) {
+    var mk = document.createElement('mark');
+    mk.textContent = s;
+    parent.appendChild(mk);
+  }
+
+  // rec = { page, raw, norm, map } — 매칭은 norm 으로 했고, 표시는 원문(raw)으로 한다.
+  function resultRow(rec, at, q) {
+    var text = rec.raw;
     var li = document.createElement('li');
     var b = document.createElement('button');
     b.type = 'button';
     b.className = 'result';
-    b.dataset.page = String(page - 1);
+    b.dataset.page = String(rec.page - 1);
 
     var head = document.createElement('span');
     head.className = 'result__page';
-    head.textContent = '페이지: ' + page;
+    head.textContent = '페이지: ' + rec.page;
 
-    var start = Math.max(0, at - 40);
-    var end = Math.min(text.length, at + q.length + 40);
+    // norm 인덱스를 원문 인덱스로 옮긴다
+    var map = rec.map;
+    var hitStart = map[Math.min(at, map.length - 1)];
+    var hitEnd = map[Math.min(at + q.length - 1, map.length - 1)] + 1;
+
+    var start = Math.max(0, hitStart - 40);
+    var end = Math.min(text.length, hitEnd + 40);
     var snip = text.slice(start, end);
     var body = document.createElement('span');
     body.className = 'result__snip';
     if (start > 0) body.appendChild(document.createTextNode('…'));
 
+    // 원문에 질의가 그대로(대소문자만 다르게) 들어 있으면 모든 자리를 표시한다
     var low = snip.toLowerCase();
-    var pos = 0, found;
-    while ((found = low.indexOf(q, pos)) !== -1) {
-      if (found > pos) body.appendChild(document.createTextNode(snip.slice(pos, found)));
-      var mk = document.createElement('mark');
-      mk.textContent = snip.slice(found, found + q.length);
-      body.appendChild(mk);
-      pos = found + q.length;
+    var pos = 0, found, any = false;
+    if (low.length === snip.length) {
+      while ((found = low.indexOf(q, pos)) !== -1) {
+        if (found > pos) body.appendChild(document.createTextNode(snip.slice(pos, found)));
+        marked(body, snip.slice(found, found + q.length));
+        pos = found + q.length;
+        any = true;
+      }
+    }
+    if (!any) {
+      // 공백 정규화 등으로 원문에서 질의가 연속으로 보이지 않는 경우 — 맞은 구간만
+      var a = Math.max(0, hitStart - start);
+      var z = Math.max(a, Math.min(snip.length, hitEnd - start));
+      if (a > 0) body.appendChild(document.createTextNode(snip.slice(0, a)));
+      marked(body, snip.slice(a, z));
+      pos = z;
     }
     if (pos < snip.length) body.appendChild(document.createTextNode(snip.slice(pos)));
     if (end < text.length) body.appendChild(document.createTextNode('…'));
@@ -1144,6 +1258,7 @@
     el.zoomOut.disabled = zoom.scale <= zoom.min + 0.01;
     el.zoomIn.disabled = zoom.scale >= zoom.max - 0.01;
     $('zm-in').disabled = el.zoomIn.disabled;
+    $('zm-out').disabled = el.zoomOut.disabled;
   }
 
   function zoomAt(nextScale, cx, cy) {
@@ -1190,9 +1305,9 @@
     el.zoomIn.addEventListener('click', function () {
       zoomAt(zoom.scale + 0.5, el.zoomView.clientWidth / 2, el.zoomView.clientHeight / 2);
     });
+    // '−' 는 100% 까지만 내려간다. 닫기는 ✕ / '확대 종료' 만 한다.
     el.zoomOut.addEventListener('click', function () {
-      if (zoom.scale - 0.5 <= zoom.min + 0.01) { closeZoom(); return; }
-      zoomAt(zoom.scale - 0.5, el.zoomView.clientWidth / 2, el.zoomView.clientHeight / 2);
+      zoomAt(Math.max(zoom.min, zoom.scale - 0.5), el.zoomView.clientWidth / 2, el.zoomView.clientHeight / 2);
     });
 
     var pts = new Map();
@@ -1340,6 +1455,7 @@
   function setVolume(v, persist) {
     music.vol = Math.max(0, Math.min(100, Math.round(v)));
     el.bgm.volume = music.vol / 100;
+    el.bgm.muted = music.vol === 0;      // iOS 는 volume 을 무시한다 — muted 로 같이 끈다
     el.volRange.value = String(music.vol);
     el.volVal.textContent = String(music.vol);
     if (persist) prefSet(VOL_KEY, String(music.vol));
@@ -1348,6 +1464,9 @@
 
   function toggleMusic() {
     if (!music.available) return;
+    // 켜짐으로 보이지만 자동재생 정책에 막혀 실제로는 멈춰 있는 상태.
+    // 이때 첫 누름은 '끄기'가 아니라 '재생 시작'이어야 한다.
+    if (music.on && el.bgm.paused) { tryPlay(); paintMusic(); return; }
     setMusic(!music.on);
   }
 
@@ -1365,9 +1484,19 @@
     paintMusic();
   }
 
+  // 실제 재생이 시작됐는데 상태가 꺼짐이면 켜짐으로 맞춘다.
+  // 반대로 멈췄더라도 '켜짐인데 정책상 대기 중'일 수 있으므로 끄지는 않는다.
+  function syncMusicFromAudio() {
+    if (!music.available) return;
+    if (!el.bgm.paused && !music.on) {
+      music.on = true;
+      prefSet(BGM_KEY, 'on');
+    }
+    paintMusic();
+  }
+
   function wireMusic() {
-    el.bgm.src = book.music || 'audio/bgm.mp3';
-    setVolume(parseInt(prefGet(VOL_KEY, '50'), 10) || 0, false);
+    // 리스너를 먼저 걸고 src 를 준다 — 그래야 즉시 나는 error 도 잡힌다
     el.bgm.addEventListener('error', function () {
       music.available = false;
       music.on = false;
@@ -1377,6 +1506,15 @@
       });
       paintMusic();
     });
+    el.bgm.addEventListener('play', syncMusicFromAudio);
+    el.bgm.addEventListener('playing', syncMusicFromAudio);
+    el.bgm.addEventListener('pause', syncMusicFromAudio);
+    el.bgm.addEventListener('ended', syncMusicFromAudio);
+
+    var savedVol = parseInt(prefGet(VOL_KEY, '50'), 10);
+    setVolume(isFinite(savedVol) ? savedVol : 50, false);
+    el.bgm.src = book.music || 'audio/bgm.mp3';
+
     el.volRange.addEventListener('input', function () { setVolume(el.volRange.value, true); });
     el.volRange.addEventListener('change', function () { setVolume(el.volRange.value, true); });
     // 기본 켜짐(여름호와 동일). 자동재생이 허용된 환경이면 바로 시작하고,
@@ -1385,15 +1523,24 @@
     paintMusic();
     if (music.on) tryPlay();
 
-    var arm = function () {
+    var arm = function (e) {
       if (music.armed) return;
       music.armed = true;
       document.removeEventListener('pointerdown', arm, true);
       document.removeEventListener('keydown', arm, true);
+      // 음악 단추를 눌러 깨어난 경우는 그 click 이 직접 처리한다.
+      // 여기서 미리 재생하면 뒤따르는 click 이 '끄기'로 뒤집혀 이중 토글이 된다.
+      if (e && e.target && e.target.closest && e.target.closest('.js-music')) return;
       if (music.available && music.on && el.bgm.paused) tryPlay();
     };
     document.addEventListener('pointerdown', arm, true);
     document.addEventListener('keydown', arm, true);
+
+    // 탭을 떠났다 돌아오면 브라우저가 멈춰 둔 재생을 다시 시도한다
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) return;
+      if (music.available && music.on && el.bgm.paused) tryPlay();
+    });
   }
 
   /* ── 더보기 · 토스트 ──────────────────────────────── */
@@ -1472,6 +1619,7 @@
     el.soundSheet.hidden = false;
     el.scrim.hidden = false;
     requestAnimationFrame(function () { el.scrim.classList.add('is-on'); });
+    trapFocus(el.soundSheet);
   }
 
   function closeSound() {
@@ -1479,6 +1627,7 @@
     if (openSheetEl === el.soundSheet) { hideSheet(); return; }
     el.soundSheet.hidden = true;
     dropScrim();
+    releaseFocus();
   }
 
   // 패널·공유·소리 모달이 모두 닫혔을 때만 가림막을 걷는다
@@ -1500,6 +1649,7 @@
     $('share').hidden = false;
     el.scrim.hidden = false;
     requestAnimationFrame(function () { el.scrim.classList.add('is-on'); });
+    trapFocus($('share'));
     setTimeout(function () { $('share-copy').focus(); }, 60);
   }
 
@@ -1507,15 +1657,51 @@
     if (!isShareOpen()) return;
     $('share').hidden = true;
     dropScrim();
+    releaseFocus();
+  }
+
+  /* ── 전체화면 ─────────────────────────────────────── */
+  function fsEl() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+
+  function fullBtns() { return document.querySelectorAll('[data-act="full"]'); }
+
+  function fullUnsupported() {
+    toast('이 브라우저는 전체화면을 지원하지 않아요', 2600);
+    fullBtns().forEach(function (b) { b.hidden = true; });
+  }
+
+  function paintFull() {
+    var on = !!fsEl();
+    fullBtns().forEach(function (b) {
+      var u = b.querySelector('use');
+      if (u) u.setAttribute('href', on ? '#i-collapse' : '#i-expand');
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      var label = on ? '전체화면 끄기' : '전체화면';
+      if (b.hasAttribute('title')) b.title = label;
+      if (b.hasAttribute('aria-label')) b.setAttribute('aria-label', label);
+      var tx = b.querySelector('span:not(.sr-only)');
+      if (tx) tx.textContent = label;
+    });
+    // F11·Esc 로 밖에서 전체화면이 풀렸을 때 몰입 모드 표시가 남지 않게 한다
+    if (!on && immersive) setImmersive(false);
   }
 
   function doFullscreen() {
     var d = document, r = d.documentElement;
-    if (d.fullscreenElement || d.webkitFullscreenElement) {
-      (d.exitFullscreen || d.webkitExitFullscreen).call(d);
-    } else {
-      (r.requestFullscreen || r.webkitRequestFullscreen).call(r);
-    }
+    try {
+      if (fsEl()) {
+        var x = d.exitFullscreen || d.webkitExitFullscreen;
+        if (!x) return;
+        var q = x.call(d);
+        if (q && q.catch) q.catch(function () { /* 이미 나갔다 */ });
+      } else {
+        var f = r.requestFullscreen || r.webkitRequestFullscreen;
+        if (!f) { fullUnsupported(); return; }
+        var p = f.call(r);
+        // 카카오톡 등 인앱 WebView 는 요청을 거부한다
+        if (p && p.catch) p.catch(function () { fullUnsupported(); });
+      }
+    } catch (e) { fullUnsupported(); }
   }
 
   function doShare() {
@@ -1537,7 +1723,11 @@
   function wireMore() {
     var canFull = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
     if (!canFull) {
-      document.querySelectorAll('[data-act="full"]').forEach(function (b) { b.hidden = true; });
+      fullBtns().forEach(function (b) { b.hidden = true; });
+    } else {
+      document.addEventListener('fullscreenchange', paintFull);
+      document.addEventListener('webkitfullscreenchange', paintFull);
+      paintFull();
     }
 
     el.deskMore.addEventListener('click', function (e) {
@@ -1563,6 +1753,7 @@
     });
 
     $('share-close').addEventListener('click', closeShare);
+    $('sound-close').addEventListener('click', closeSound);
     $('share-copy').addEventListener('click', function () { copyLink($('share-url').value); });
   }
 
@@ -1680,7 +1871,8 @@
 
       return Promise.all(extras).then(function (res) {
         searchIndex = (res[0] || []).map(function (r) {
-          return { page: r.page, norm: norm(r.text) };
+          var m = normWithMap(r.text);
+          return { page: r.page, raw: m.raw, norm: m.norm, map: m.map };
         });
         tocData = (res[1] || []).filter(function (t) { return t && t.title && t.page; });
 

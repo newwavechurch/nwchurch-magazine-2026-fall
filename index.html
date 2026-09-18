@@ -81,6 +81,7 @@
     <symbol id="i-next" viewBox="0 0 24 24"><path d="M8.8 4.4 16.4 12l-7.6 7.6"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M5.2 5.2 18.8 18.8M18.8 5.2 5.2 18.8"/></symbol>
     <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 3.6H3.6V9M15 3.6h5.4V9M9 20.4H3.6V15M15 20.4h5.4V15"/></symbol>
+    <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M3.6 9H9V3.6M20.4 9H15V3.6M3.6 15H9v5.4M20.4 15H15v5.4"/></symbol>
     <symbol id="i-link" viewBox="0 0 24 24"><path d="M10.4 13.6a3.9 3.9 0 0 0 5.6 0l2.8-2.8a3.9 3.9 0 1 0-5.6-5.6l-1.4 1.4"/><path d="M13.6 10.4a3.9 3.9 0 0 0-5.6 0l-2.8 2.8a3.9 3.9 0 1 0 5.6 5.6l1.4-1.4"/></symbol>
     <symbol id="i-share" viewBox="0 0 24 24">
       <circle cx="18.4" cy="5.6" r="2.8"/><circle cx="5.6" cy="12" r="2.8"/><circle cx="18.4" cy="18.4" r="2.8"/>
@@ -367,6 +368,9 @@
 
   <div class="sound" id="sound-modal" hidden role="dialog" aria-modal="true" aria-label="소리 설정">
     <div class="sheet__grip" id="sound-grip"><span></span></div>
+    <button class="sound__close" type="button" id="sound-close" aria-label="소리 설정 닫기">
+      <svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg>
+    </button>
     <div class="tile">
       <button class="tile__btn js-music" data-act="music" type="button" role="switch" aria-checked="false">
         <svg class="tile__icon" aria-hidden="true"><use href="#i-tile-music"></use></svg>
