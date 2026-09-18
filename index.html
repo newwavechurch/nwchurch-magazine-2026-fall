@@ -102,6 +102,8 @@
     <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4.5 9.5h5v-5"/><path d="M19.5 14.5h-5v5"/><path d="M4.9 9.3a7.6 7.6 0 0 1 13-2.2M19.1 14.7a7.6 7.6 0 0 1-13 2.2"/></symbol>
     <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect class="fill" x="7" y="5" width="3.6" height="14" rx="1"/><rect class="fill" x="13.4" y="5" width="3.6" height="14" rx="1"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path class="fill" d="M8.4 5.3 18.6 12 8.4 18.7z"/></symbol>
   </defs>
 </svg>
 
@@ -123,42 +125,66 @@
     <svg class="icon" aria-hidden="true"><use href="#i-next"></use></svg>
   </button>
 
-  <nav class="toolbar" id="toolbar" aria-label="뷰어 도구">
-    <div class="toolbar__group">
-      <button class="tool" id="btn-thumbs" type="button" aria-pressed="false" aria-label="썸네일" title="썸네일">
-        <svg class="icon" aria-hidden="true"><use href="#i-thumbs"></use></svg>
-      </button>
-      <button class="tool" id="btn-toc" type="button" aria-pressed="false" aria-label="목차" title="목차">
-        <svg class="icon" aria-hidden="true"><use href="#i-toc"></use></svg>
-      </button>
-      <button class="tool" id="btn-search" type="button" aria-pressed="false" aria-label="찾기" title="찾기">
-        <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
-      </button>
-      <button class="tool" id="btn-zoom" type="button" aria-pressed="false" aria-label="확대" title="확대">
-        <svg class="icon" aria-hidden="true"><use href="#i-zoom"></use></svg>
-      </button>
-      <button class="tool js-music-btn" id="btn-music" data-act="sound" type="button" aria-label="소리" title="소리">
-        <svg class="icon" aria-hidden="true"><use href="#i-music-off"></use></svg>
-      </button>
-      <span class="tool-wrap">
-        <button class="tool" id="btn-more" type="button" aria-expanded="false" aria-label="더보기" title="더보기">
-          <svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg>
+  <!-- 모바일 상단 바 (<900px) -->
+  <header class="mtop" id="mtop">
+    <span class="mtop__title" id="mtop-title">더이웃 SNS 가을호</span>
+    <button class="mtop__btn" id="mtop-share" data-act="share" type="button" aria-label="공유">
+      <svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg>
+    </button>
+  </header>
+
+  <!-- 모바일 하단 바 (<900px) -->
+  <nav class="mbar" id="mbar" aria-label="페이지 이동">
+    <div class="mbar__goto">
+      <div class="mbar__row">
+        <button class="mbtn" id="m-first" type="button" aria-label="처음으로">
+          <svg class="icon" aria-hidden="true"><use href="#i-first"></use></svg>
         </button>
-        <div class="menu" id="more-menu" role="menu" hidden>
-          <button class="menu__item" data-act="full" type="button" role="menuitem">
-            <svg class="icon" aria-hidden="true"><use href="#i-expand"></use></svg><span>전체화면</span>
-          </button>
-          <button class="menu__item" data-act="share" type="button" role="menuitem">
-            <svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg><span>공유</span>
-          </button>
-          <button class="menu__item" data-act="home" type="button" role="menuitem">
-            <svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg><span>처음으로</span>
+        <button class="mbtn" id="m-prev" type="button" aria-label="이전 페이지">
+          <svg class="icon" aria-hidden="true"><use href="#i-prev"></use></svg>
+        </button>
+        <div class="mpage" id="m-pagebox">
+          <button class="mpage__label" id="m-pagelabel" type="button" aria-label="페이지 번호를 눌러 이동">1/76</button>
+          <input class="mpage__input" id="m-pageinput" type="text" inputmode="numeric" pattern="[0-9]*"
+                 autocomplete="off" aria-label="이동할 페이지 번호" hidden>
+          <button class="mpage__go" id="m-pagego" type="button" aria-label="이동" hidden>
+            <svg class="icon" aria-hidden="true"><use href="#i-next"></use></svg>
           </button>
         </div>
-      </span>
+        <button class="mbtn" id="m-next" type="button" aria-label="다음 페이지">
+          <svg class="icon" aria-hidden="true"><use href="#i-next"></use></svg>
+        </button>
+        <button class="mbtn" id="m-last" type="button" aria-label="끝으로">
+          <svg class="icon" aria-hidden="true"><use href="#i-last"></use></svg>
+        </button>
+      </div>
+      <div class="mslider" id="m-slider" role="slider" tabindex="0"
+           aria-label="페이지 이동" aria-valuemin="1" aria-valuemax="76" aria-valuenow="1">
+        <span class="mslider__track"></span>
+        <span class="mslider__knob" id="m-knob"></span>
+      </div>
     </div>
-    <p class="pager" aria-live="polite"><span id="pager-cur">1</span><span class="pager__sep">/</span><span id="pager-total">76</span></p>
+    <div class="mbar__icons">
+      <button class="micon" id="m-toc" type="button" aria-label="목차">
+        <svg class="icon" aria-hidden="true"><use href="#i-toc"></use></svg>
+      </button>
+      <button class="micon" id="m-thumbs" type="button" aria-label="썸네일">
+        <svg class="icon" aria-hidden="true"><use href="#i-thumbs"></use></svg>
+      </button>
+      <button class="micon" id="m-full" data-act="full" type="button" aria-label="전체화면">
+        <svg class="icon" aria-hidden="true"><use href="#i-expand"></use></svg>
+      </button>
+      <button class="micon" id="m-more" type="button" aria-label="더보기">
+        <svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg>
+      </button>
+    </div>
   </nav>
+
+  <!-- 배경음악 (페이지 우상단) -->
+  <button class="mfab js-music" id="music-fab" data-act="music" type="button" role="switch" aria-checked="false" aria-label="배경음악">
+    <svg class="icon" aria-hidden="true"><use href="#i-play"></use></svg>
+    <span class="sr-only js-music-label">배경음악 꺼짐</span>
+  </button>
 
   <!-- 데스크톱 툴바 (≥900px) -->
   <nav class="deskbar" id="deskbar" aria-label="뷰어 도구">
@@ -256,9 +282,78 @@
     <div class="panel__body"><ul class="results" id="search-results"></ul><p class="empty" id="search-empty" hidden>찾는 말이 본문에 없습니다.</p></div>
   </section>
 
+  <!-- 모바일 바텀시트: 전체 검색 / 목차 / 썸네일 -->
+  <section class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-label="목차와 썸네일">
+    <div class="sheet__grip" id="sheet-grip"><span></span></div>
+    <div class="stabs" role="tablist" aria-label="보기 전환">
+      <span class="stabs__ind" id="stabs-ind"></span>
+      <button class="stab" type="button" role="tab" data-tab="search" aria-selected="false">전체 검색</button>
+      <button class="stab" type="button" role="tab" data-tab="toc" aria-selected="true">목차</button>
+      <button class="stab" type="button" role="tab" data-tab="thumbs" aria-selected="false">썸네일</button>
+    </div>
+    <div class="sheet__body">
+      <div class="spane" id="spane-search" role="tabpanel" hidden>
+        <form class="sfield" id="s-search-form" role="search">
+          <svg class="icon sfield__icon" aria-hidden="true"><use href="#i-search"></use></svg>
+          <input type="search" id="s-search-input" placeholder="본문에서 찾을 말" autocomplete="off" aria-label="찾을 말">
+        </form>
+        <p class="shint" id="s-search-count" hidden></p>
+        <ul class="results" id="s-search-results"></ul>
+        <p class="empty" id="s-search-empty" hidden>찾는 말이 본문에 없습니다.</p>
+      </div>
+      <div class="spane" id="spane-toc" role="tabpanel">
+        <div class="sfield">
+          <svg class="icon sfield__icon" aria-hidden="true"><use href="#i-search"></use></svg>
+          <input type="search" id="s-toc-filter" placeholder="목차에서 거르기" autocomplete="off" aria-label="목차 거르기">
+        </div>
+        <ul class="stoc" id="s-toc-list"></ul>
+        <p class="empty" id="s-toc-empty" hidden>해당하는 꼭지가 없습니다.</p>
+      </div>
+      <div class="spane" id="spane-thumbs" role="tabpanel" hidden>
+        <ol class="sthumbs" id="s-thumb-grid"></ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- 모바일 더보기 시트 -->
+  <section class="sheet sheet--more" id="sheet-more" hidden role="dialog" aria-modal="true" aria-label="더보기">
+    <div class="sheet__grip" id="sheet-more-grip"><span></span></div>
+    <div class="tiles">
+      <button class="tile2" type="button" data-more="search">
+        <span class="tile2__ic"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg></span>
+        <span class="tile2__tx">검색</span>
+      </button>
+      <button class="tile2" type="button" data-more="sound">
+        <span class="tile2__ic"><svg class="icon" aria-hidden="true"><use href="#i-sound-on"></use></svg></span>
+        <span class="tile2__tx">소리</span>
+      </button>
+      <button class="tile2" type="button" data-more="zoom">
+        <span class="tile2__ic"><svg class="icon" aria-hidden="true"><use href="#i-zoom"></use></svg></span>
+        <span class="tile2__tx">확대</span>
+      </button>
+      <button class="tile2" type="button" data-more="share">
+        <span class="tile2__ic"><svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg></span>
+        <span class="tile2__tx">공유</span>
+      </button>
+      <button class="tile2" type="button" data-more="home">
+        <span class="tile2__ic"><svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg></span>
+        <span class="tile2__tx">처음으로</span>
+      </button>
+    </div>
+  </section>
+
   <div class="zoom" id="zoom" hidden aria-label="확대 보기">
     <div class="zoom__view" id="zoom-view">
       <div class="zoom__canvas" id="zoom-canvas"></div>
+    </div>
+    <div class="zoom__mbar">
+      <button class="zmbtn" id="zm-out" type="button" aria-label="축소">
+        <svg class="icon" aria-hidden="true"><use href="#i-minus"></use></svg>
+      </button>
+      <button class="zmbtn" id="zm-in" type="button" aria-label="더 확대">
+        <svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg>
+      </button>
+      <button class="zmbtn zmbtn--exit" id="zm-exit" type="button">확대 종료</button>
     </div>
     <div class="zoom__bar">
       <button class="zbtn" id="zoom-out" type="button" aria-label="축소"><svg class="icon" aria-hidden="true"><use href="#i-minus"></use></svg></button>
@@ -271,6 +366,7 @@
   </div>
 
   <div class="sound" id="sound-modal" hidden role="dialog" aria-modal="true" aria-label="소리 설정">
+    <div class="sheet__grip" id="sound-grip"><span></span></div>
     <div class="tile">
       <button class="tile__btn js-music" data-act="music" type="button" role="switch" aria-checked="false">
         <svg class="tile__icon" aria-hidden="true"><use href="#i-tile-music"></use></svg>
