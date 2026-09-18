@@ -2,8 +2,10 @@
    색: 배경 진회색 / 툴바 #333 / 패널 남색 #3963A5 */
 
 :root{
-  --bg-top:#5c5c5c;
-  --bg-bottom:#3a3a3a;
+  /* 여름호와 같은 균일한 회색 바탕 (searchHightlightColor 와 함께 맞춘 값) */
+  --bg-top:#505050;
+  --bg-bottom:#505050;
+  --hl:#0099ff;
   --bar:rgba(51,51,51,.94);
   --bar-solid:#333;
   --ink-on-bar:#eee;
@@ -63,9 +65,7 @@ li:focus-visible{outline:2px solid #ffd24d;outline-offset:2px}
 .app{
   position:fixed;inset:0;
   height:100dvh;
-  background:
-    radial-gradient(120% 90% at 50% 8%, rgba(255,255,255,.10), transparent 62%),
-    linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+  background:var(--bg-top);
 }
 
 .stage{
@@ -83,12 +83,19 @@ li:focus-visible{outline:2px solid #ffd24d;outline-offset:2px}
 .stf__parent{margin:0 auto}
 .stf__parent *{-webkit-user-select:none;user-select:none}
 
-.page{background:#fff;overflow:hidden}
+.page{background:#fff;overflow:hidden;position:relative}
 /* 그림자는 '놓여 있는' 쪽에만. 넘어가는 중인 쪽은 라이브러리가 직접 그린다 */
 .page.--simple{box-shadow:var(--page-shadow)}
 .page img{
   width:100%;height:100%;display:block;object-fit:cover;
   -webkit-user-drag:none;user-drag:none;pointer-events:none;
+}
+/* ─ 검색어 하이라이트 (여름호 searchHightlightColor #0099ff) ─ */
+.hl{position:absolute;inset:0;z-index:4;pointer-events:none}
+.hl i{
+  position:absolute;display:block;
+  background:var(--hl);opacity:.34;border-radius:2px;
+  box-shadow:0 0 0 1px rgba(0,153,255,.45);
 }
 .page.is-loading::after{
   content:"";position:absolute;left:50%;top:50%;
@@ -133,6 +140,15 @@ li:focus-visible{outline:2px solid #ffd24d;outline-offset:2px}
 /* ─ 공통 조각 ─ */
 .tool-wrap{position:relative;display:block}
 .pager__sep{margin:0 5px;color:var(--ink-dim)}
+/* 툴바 쪽번호: 눌러서 직접 입력 */
+.pager__btn{padding:2px 6px;border-radius:6px;font-variant-numeric:tabular-nums;color:inherit}
+.pager__btn:hover{background:rgba(255,255,255,.1)}
+.pager__input{
+  width:76px;height:28px;padding:0 8px;
+  background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.22);border-radius:6px;
+  color:#fff;font:inherit;font-size:13px;text-align:center;
+  font-variant-numeric:tabular-nums;
+}
 
 /* ─ 더보기 메뉴 ─ */
 .menu{
@@ -366,8 +382,8 @@ li:focus-visible{outline:2px solid #ffd24d;outline-offset:2px}
   width:100%;padding:13px 8px;text-align:left;border-radius:6px;
 }
 .toc__btn:hover{background:var(--navy-soft)}
-.toc__title{flex:1;font-size:15px;line-height:1.4}
-.toc__page{font-size:12.5px;color:rgba(255,255,255,.66);font-variant-numeric:tabular-nums}
+.toc__title{flex:1;min-width:0;font-size:15px;line-height:1.4}
+.toc__page{flex:none;font-size:13px;color:rgba(255,255,255,.66);font-variant-numeric:tabular-nums}
 .toc__item.is-current .toc__title{font-weight:600}
 .toc__item.is-current .toc__page{color:var(--mark)}
 
@@ -407,6 +423,7 @@ li:focus-visible{outline:2px solid #ffd24d;outline-offset:2px}
 .zbtn:hover{background:rgba(255,255,255,.1)}
 .zbtn[disabled]{opacity:.32;cursor:default}
 .zbtn--close{margin-left:2px;border-left:1px solid rgba(255,255,255,.14);border-radius:0 8px 8px 0}
+.zoom__div{flex:none;width:1px;height:22px;margin:0 4px;background:rgba(255,255,255,.16)}
 #zoom-range{width:132px;margin:0 2px;accent-color:var(--mark);background:transparent;cursor:pointer}
 .zoom__level{min-width:50px;text-align:center;font-size:12.5px;color:var(--ink-dim);font-variant-numeric:tabular-nums}
 @media (max-width:560px){
@@ -435,6 +452,19 @@ li:focus-visible{outline:2px solid #ffd24d;outline-offset:2px}
 }
 .share__qr img,.share__qr canvas,.share__qr table{display:block;width:100%;height:100%;image-rendering:pixelated}
 .share__row{display:flex;gap:8px}
+.share__check{
+  display:flex;align-items:center;gap:8px;
+  margin-top:12px;font-size:12.5px;color:rgba(255,255,255,.82);cursor:pointer;
+}
+.share__check input{width:16px;height:16px;margin:0;accent-color:var(--mark);cursor:pointer}
+.share__acts{display:flex;gap:8px;margin-top:14px}
+.share__act{
+  flex:1;height:38px;display:flex;align-items:center;justify-content:center;gap:7px;
+  border:1px solid var(--navy-line);border-radius:8px;
+  font-size:13px;color:#fff;background:rgba(255,255,255,.05);
+}
+.share__act:hover{background:rgba(255,255,255,.12)}
+.share__act .icon{width:17px;height:17px}
 #share-url{
   flex:1;min-width:0;height:38px;padding:0 10px;
   background:rgba(0,0,0,.22);border:1px solid var(--navy-line);border-radius:8px;
@@ -468,7 +498,7 @@ li:focus-visible{outline:2px solid #ffd24d;outline-offset:2px}
 .boot{
   position:absolute;inset:0;z-index:90;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
-  background:linear-gradient(180deg,var(--bg-top),var(--bg-bottom));
+  background:var(--bg-top);
   transition:opacity .35s ease;
 }
 .boot.is-gone{opacity:0;pointer-events:none}
@@ -494,8 +524,21 @@ li:focus-visible{outline:2px solid #ffd24d;outline-offset:2px}
   overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;
 }
 
+/* ─ 데스크톱 첫 진입 안내 (여름호 isShowBottomFullscreenPrompts) ─ */
+.fsprompt{
+  position:absolute;z-index:12;
+  left:50%;bottom:14px;transform:translate(-50%,8px);
+  padding:9px 16px;border-radius:999px;
+  background:rgba(18,18,18,.82);color:#fff;
+  font-size:13px;letter-spacing:-.01em;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+  opacity:0;transition:opacity .28s ease, transform .28s ease;
+}
+.fsprompt.is-on{opacity:1;transform:translate(-50%,0)}
+
 /* 데스크톱에서는 모바일 전용 요소를 모두 감춘다 */
 .mtop,.mbar,.sheet,.mfab,.zoom__mbar{display:none}
+@media (max-width:899px){ .fsprompt{display:none} }
 
 /* ── 한 장 넘김 엔진 ─────────────────────────────────── */
 .mf{
@@ -509,6 +552,7 @@ li:focus-visible{outline:2px solid #ffd24d;outline-offset:2px}
 }
 /* 넘기는 도중 겹이 숨겨지면 pointerdown 대상이 사라져 브라우저가 pointercancel 을
    던진다. 겹은 포인터를 받지 않게 해서 대상이 늘 .mf 로 고정되게 한다. */
+.mf .hl{z-index:2}    /* base(1) 위, 넘어가는 겹(3) 아래 */
 .mf__img,.mf__flat,.mf__flap,.mf__shade{position:absolute;top:0;height:100%;pointer-events:none}
 .mf__img{left:0;width:100%;object-fit:cover;background:#fff;display:block}
 .mf__under{z-index:0}
@@ -796,17 +840,17 @@ li:focus-visible{outline:2px solid #ffd24d;outline-offset:2px}
   .zoom__mbar{
     position:absolute;z-index:2;left:0;right:0;
     bottom:calc(var(--safe-b) + 14px);
-    display:flex;align-items:center;justify-content:center;gap:12px;
-    padding:0 16px;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    padding:0 10px;
   }
   .zmbtn{
-    width:60px;height:56px;display:grid;place-items:center;
+    flex:none;width:52px;height:54px;display:grid;place-items:center;
     background:rgba(28,28,28,.9);color:#fff;
     border-radius:14px;box-shadow:0 6px 20px rgba(0,0,0,.45);
   }
-  .zmbtn .icon{width:26px;height:26px;stroke-width:2.2}
+  .zmbtn .icon{width:24px;height:24px;stroke-width:2.2}
   .zmbtn[disabled]{opacity:.34}
-  .zmbtn--exit{width:auto;padding:0 22px;font-size:15px;font-weight:600}
+  .zmbtn--exit{width:auto;padding:0 14px;font-size:14px;font-weight:600;white-space:nowrap}
 
   /* 토스트는 하단 바 위로 */
   .toast{bottom:calc(var(--safe-b) + 180px)}

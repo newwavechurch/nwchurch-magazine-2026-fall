@@ -2,12 +2,13 @@
 """
 가을호 e-book 에셋 빌드 스크립트 (재실행 가능 / idempotent)
 
-실행:  python scripts/build-assets.py
+실행:  python scripts/build-assets.py           이미 있는 이미지·음원은 건너뛴다
+       python scripts/build-assets.py --force   전부 다시 만든다
 
 생성물:
   pages/p001.webp ... pages/p076.webp   단면 페이지 이미지 (폭 1200)
   thumbs/p001.webp ...                  썸네일 (폭 240)
-  data/search.json                      페이지별 본문 텍스트
+  data/search.json                      페이지별 본문 텍스트 + 단어 좌표
   data/toc.json                         섹션 목차
   data/book.json                        책 메타데이터
   audio/bgm.mp3                         배경음악 (128kbps 재인코딩)
@@ -88,17 +89,41 @@ def clean_text(s):
     return s.strip()
 
 
-def half_text(page, clip):
-    """단어 중심 좌표 기준으로 반쪽에 속하는 텍스트만 읽기 순서대로 뽑는다."""
-    words = page.get_text("words")  # (x0,y0,x1,y1, word, block, line, word_no)
+def clamp01(v):
+    return 0.0 if v < 0.0 else (1.0 if v > 1.0 else v)
+
+
+def half_words(page, clip):
+    """반쪽에 속하는 단어를 읽기 순서로 뽑아 [x0, y0, x1, y1, 단어] 목록으로 돌려준다.
+
+    좌표는 그 반쪽(= 뷰어의 단면 한 쪽) 기준 0~1 정규화 값이다. 펼침면이면
+    clip 이 좌/우 절반이므로 x 는 자동으로 해당 반쪽 기준으로 다시 잡힌다.
+    """
+    raw = page.get_text("words")  # (x0,y0,x1,y1, word, block, line, word_no)
     picked = []
-    for x0, y0, x1, y1, w, bno, lno, wno in words:
+    for x0, y0, x1, y1, w, bno, lno, wno in raw:
         cx = (x0 + x1) / 2.0
         cy = (y0 + y1) / 2.0
-        if clip.x0 <= cx < clip.x1 and clip.y0 <= cy < clip.y1:
-            picked.append((bno, lno, wno, w))
+        if not (clip.x0 <= cx < clip.x1 and clip.y0 <= cy < clip.y1):
+            continue
+        t = clean_text(w)
+        if not t:
+            continue
+        picked.append((bno, lno, wno, x0, y0, x1, y1, t))
     picked.sort(key=lambda t: (t[0], t[1], t[2]))
-    return clean_text(" ".join(p[3] for p in picked))
+
+    cw = clip.width or 1.0
+    ch = clip.height or 1.0
+    out = []
+    for _, _, _, x0, y0, x1, y1, t in picked:
+        out.append([
+            round(clamp01((x0 - clip.x0) / cw), 5),
+            round(clamp01((y0 - clip.y0) / ch), 5),
+            round(clamp01((x1 - clip.x0) / cw), 5),
+            round(clamp01((y1 - clip.y0) / ch), 5),
+            t,
+        ])
+    return out
 
 
 def half_spans(page, clip):
@@ -136,10 +161,32 @@ def detect_divider(spans):
     return nums[0], clean_text("".join(title_parts))
 
 
-def render_pages(doc):
-    """페이지/썸네일 이미지를 만들고 (출력 높이, [(파일명, 바이트)]) 를 돌려준다."""
+def page_names():
+    return ["p%03d.webp" % (i + 1) for i in range(EXPECTED_PAGES)]
+
+
+def images_done():
+    """페이지·썸네일이 이미 모두 있으면 True."""
+    return all((PAGES_DIR / n).exists() and (THUMBS_DIR / n).exists()
+               for n in page_names())
+
+
+def render_pages(doc, force=False):
+    """페이지/썸네일 이미지를 만들고 (출력 높이, [(파일명, 바이트)]) 를 돌려준다.
+
+    이미 다 있으면 다시 쓰지 않는다 (webp 인코더 버전이 달라지면 바이트가
+    달라질 수 있어, 재실행이 이미지 파일을 건드리지 않게 막는다).
+    --force 로만 다시 만든다.
+    """
     PAGES_DIR.mkdir(parents=True, exist_ok=True)
     THUMBS_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not force and images_done():
+        with Image.open(PAGES_DIR / page_names()[0]) as im:
+            out_height = im.height
+        sizes = [(n, (PAGES_DIR / n).stat().st_size) for n in page_names()]
+        log("  이미 있는 %d 장 건너뜀 (다시 만들려면 --force)" % len(sizes))
+        return out_height, sizes
 
     # 단면 폭(= 첫 면인 표지의 폭) 기준 렌더 배율
     zoom = (PAGE_WIDTH * SUPERSAMPLE) / doc[0].rect.width
@@ -186,7 +233,14 @@ def build_text(doc):
         page = doc[pno]
         for clip in half_rects(page):
             idx += 1
-            search.append({"page": idx, "text": half_text(page, clip)})
+            words = half_words(page, clip)
+            # text 는 반드시 words 를 공백으로 이어 붙인 것과 같아야 한다.
+            # 뷰어가 text 의 문자 위치를 단어 인덱스로 되짚어 하이라이트를 그린다.
+            search.append({
+                "page": idx,
+                "text": " ".join(w[4] for w in words),
+                "words": words,
+            })
             d = detect_divider(half_spans(page, clip))
             if d:
                 dividers.append((d[0], idx, d[1]))
@@ -201,9 +255,12 @@ def build_text(doc):
     return search, toc
 
 
-def build_audio():
+def build_audio(force=False):
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     out = AUDIO_DIR / "bgm.mp3"
+    if not force and out.exists():
+        log("  이미 있는 bgm.mp3 건너뜀 (다시 만들려면 --force)")
+        return out.stat().st_size
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("ffmpeg 를 찾을 수 없습니다.")
@@ -224,10 +281,11 @@ def write_json(path, obj):
 
 
 def main():
+    force = "--force" in sys.argv[1:]
     if not SRC_PDF.exists():
         log("입력 PDF 를 찾을 수 없습니다: %s" % SRC_PDF)
         return 1
-    if not SRC_MP3.exists():
+    if not SRC_MP3.exists() and (force or not (AUDIO_DIR / "bgm.mp3").exists()):
         log("입력 MP3 를 찾을 수 없습니다: %s" % SRC_MP3)
         return 1
 
@@ -235,7 +293,7 @@ def main():
     log("PDF: %d 면" % doc.page_count)
 
     log("[1/4] 페이지 이미지 · 썸네일 생성")
-    height, sizes = render_pages(doc)
+    height, sizes = render_pages(doc, force)
 
     total = sum(s for _, s in sizes)
     smallest = min(sizes, key=lambda t: t[1])
@@ -246,16 +304,18 @@ def main():
         % (smallest[0], smallest[1] / 1024.0, largest[0], largest[1] / 1024.0))
     log("  출력 크기 %dx%d" % (PAGE_WIDTH, height))
 
-    log("[2/4] 텍스트 · 목차 추출")
+    log("[2/4] 텍스트 · 단어 좌표 · 목차 추출")
     search, toc = build_text(doc)
     write_json(DATA_DIR / "search.json", search)
     write_json(DATA_DIR / "toc.json", toc)
-    log("  search.json %d 항목 / toc.json %d 항목" % (len(search), len(toc)))
+    nwords = sum(len(r["words"]) for r in search)
+    log("  search.json %d 항목 / 단어 %d 개 / toc.json %d 항목"
+        % (len(search), nwords, len(toc)))
     for t in toc:
         log("    p%03d  %s" % (t["page"], t["title"]))
 
     log("[3/4] 배경음악 재인코딩")
-    asize = build_audio()
+    asize = build_audio(force)
     log("  audio/bgm.mp3 %.2f MB (원본 %.2f MB)"
         % (asize / 1048576.0, SRC_MP3.stat().st_size / 1048576.0))
 

@@ -15,6 +15,8 @@
   var TURN_RATIO = 0.22;        // 폭의 22% 미만에서 놓으면 제자리로
   var FLICK_V = 0.3;            // px/ms — 이보다 빠르면 짧게 당겨도 넘긴다
   var HINT_KEY = 'nwc-fall-immersive-hint';
+  var FS_HINT_KEY = 'nwc-fall-fs-hint';
+  var FS_HINT_MS = 3000;        // 여름호 isShowBottomFullscreenPrompts 와 같은 3초
 
   function prefGet(key, fallback) {
     try { var v = localStorage.getItem(key); return v === null ? fallback : v; }
@@ -22,6 +24,13 @@
   }
   function prefSet(key, value) {
     try { localStorage.setItem(key, value); } catch (e) { /* 저장 불가 */ }
+  }
+  function onceThisSession(key) {
+    try {
+      if (sessionStorage.getItem(key)) return false;
+      sessionStorage.setItem(key, '1');
+      return true;
+    } catch (e) { return true; }   // 저장 불가 브라우저면 그냥 한 번 보여 준다
   }
 
   var el = {
@@ -44,6 +53,8 @@
     volRange: $('volume-range'), volVal: $('volume-val'),
     deskMore: $('db-more'), deskMenu: $('desk-menu'),
     dbCur: $('db-cur'), dbTotal: $('db-total'),
+    dbPageLabel: $('db-pagelabel'), dbPageInput: $('db-pageinput'),
+    fsPrompt: $('fsprompt'),
     slider: $('db-slider'), sliderWrap: $('db-slider-wrap'),
     preview: $('db-preview'), previewImg: $('db-preview-img'), previewNo: $('db-preview-no'),
     first: $('btn-first'), last: $('btn-last')
@@ -258,7 +269,10 @@
     markToc(idx);
     setHash(idx);
     positionFab();
-    if (fromUser && isZoomOpen()) fillZoom();
+    // 하이라이트는 그 쪽을 벗어나면 사라진다
+    if (hl.page >= 0 && spreadOf(idx).indexOf(hl.page) === -1) clearHighlight();
+    else paintHighlight();
+    if (fromUser && isZoomOpen()) fillZoom(true);
   }
 
   function goTo(idx, animate) {
@@ -368,6 +382,7 @@
     mf.shade.hidden = true;
     mf.dir = 0; mf.dest = -1; mf.p = 0;
     mf.root.style.setProperty('--mf-sh', '0');
+    paintHighlight();
   }
 
   // dir: 1 = 다음 쪽, -1 = 이전 쪽
@@ -388,6 +403,7 @@
     mf.flat.hidden = false;
     mf.flap.hidden = false;
     mf.shade.hidden = false;
+    clearHlNodes();          // 넘기는 동안에는 하이라이트를 걷는다 (상태는 유지)
     return true;
   }
 
@@ -582,38 +598,48 @@
   }
 
   /* ── 쪽 번호 직접 입력 ────────────────────────────── */
-  function wirePageInput() {
+  // 모바일 하단바와 데스크톱 툴바가 같은 규칙을 쓴다:
+  // 표시를 누르면 입력칸, Enter 로 이동, Esc·blur 로 취소.
+  function wirePageJump(labelEl, inputEl, goEl) {
+    if (!labelEl || !inputEl) return;
     function open() {
-      el.mPageLabel.hidden = true;
-      el.mPageInput.hidden = false;
-      el.mPageGo.hidden = false;
-      el.mPageInput.value = String(current + 1);
-      el.mPageInput.focus();
-      el.mPageInput.select();
+      labelEl.hidden = true;
+      inputEl.hidden = false;
+      if (goEl) goEl.hidden = false;
+      inputEl.value = String(current + 1);
+      inputEl.focus();
+      inputEl.select();
     }
     function close(commit) {
-      if (el.mPageInput.hidden) return;
-      var n = parseInt(el.mPageInput.value, 10);
-      el.mPageInput.hidden = true;
-      el.mPageGo.hidden = true;
-      el.mPageLabel.hidden = false;
+      if (inputEl.hidden) return;
+      var n = parseInt(inputEl.value, 10);
+      inputEl.hidden = true;
+      if (goEl) goEl.hidden = true;
+      labelEl.hidden = false;
       paintPager();
       if (commit && isFinite(n) && n >= 1) goTo(Math.min(total, n) - 1, false);
     }
-    el.mPageLabel.addEventListener('click', open);
-    // 눌렀을 때 입력칸이 먼저 blur 되지 않도록 기본 동작을 막는다
-    el.mPageGo.addEventListener('pointerdown', function (e) { e.preventDefault(); });
-    el.mPageGo.addEventListener('click', function () { close(true); });
-    el.mPageInput.addEventListener('keydown', function (e) {
+    labelEl.addEventListener('click', open);
+    if (goEl) {
+      // 눌렀을 때 입력칸이 먼저 blur 되지 않도록 기본 동작을 막는다
+      goEl.addEventListener('pointerdown', function (e) { e.preventDefault(); });
+      goEl.addEventListener('click', function () { close(true); });
+    }
+    inputEl.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); close(true); }
       if (e.key === 'Escape') { e.preventDefault(); close(false); }
     });
-    el.mPageInput.addEventListener('blur', function () {
+    inputEl.addEventListener('blur', function () {
       setTimeout(function () { close(false); }, 120);
     });
-    el.mPageInput.addEventListener('input', function () {
-      el.mPageInput.value = el.mPageInput.value.replace(/[^0-9]/g, '').slice(0, 4);
+    inputEl.addEventListener('input', function () {
+      inputEl.value = inputEl.value.replace(/[^0-9]/g, '').slice(0, 4);
     });
+  }
+
+  function wirePageInput() {
+    wirePageJump(el.mPageLabel, el.mPageInput, el.mPageGo);
+    wirePageJump(el.dbPageLabel, el.dbPageInput, null);
   }
 
   /* ── 몰입 모드 ────────────────────────────────────── */
@@ -636,6 +662,7 @@
 
   function setImmersive(on) {
     if (immersive === on) return;
+    if (on) hideFsPrompt();
     immersive = on;
     document.body.classList.toggle('immersive', on);
     tryFullscreen(on);
@@ -732,6 +759,7 @@
   function hideSheet(quiet) {
     if (!openSheetEl) return;
     var n = openSheetEl;
+    if (n === el.sheet && sheetTab === 'search') clearHighlight();
     openSheetEl = null;
     n.classList.remove('is-open');
     n.style.transform = '';
@@ -889,18 +917,29 @@
     });
   }
 
-  /* ── 해시 딥링크 ──────────────────────────────────── */
-  // NOTE: replaceState 는 hashchange 를 발생시키지 않으므로 지금의 hashByUs 는
-  // 실제로 걸러 내는 일이 없다(사실상 죽은 가드). 히스토리 정책을 pushState 로
-  // 바꾸면 그때 필요해지므로 지금은 동작을 바꾸지 않고 남겨 둔다.
+  /* ── 해시 딥링크 · 히스토리 ───────────────────────── */
+  // 쪽을 넘기면 히스토리에 한 칸씩 쌓아 브라우저 뒤로가기가 '이전에 보던 쪽'이
+  // 되게 한다. 다만 같은 펼침면으로 다시 들어오는 경우(첫 진입·리사이즈 재구성·
+  // 한 동작에서 onPageChange 가 두 번 불리는 경우)는 replace 로 덮어써서
+  // 히스토리가 폭주하지 않게 한다.
   var hashByUs = false;
-  function setHash(idx) {
-    var want = '#p=' + (spreadOf(idx)[0] + 1);
-    if (location.hash === want) return;
+  var histPage = null;          // 히스토리에 올려 둔 마지막 펼침면 시작 쪽(0-based)
+
+  function markHashByUs() {
     hashByUs = true;
-    history.replaceState(null, '', location.pathname + location.search + want);
     setTimeout(function () { hashByUs = false; }, 0);
   }
+
+  function setHash(idx) {
+    var first = spreadOf(idx)[0];
+    var url = location.pathname + location.search + '#p=' + (first + 1);
+    var state = { p: first };
+    markHashByUs();
+    if (histPage === null || histPage === first) history.replaceState(state, '', url);
+    else history.pushState(state, '', url);
+    histPage = first;
+  }
+
   function hashPage() {
     var m = /[#&]p=(\d+)/.exec(location.hash);
     if (!m) return null;
@@ -908,10 +947,28 @@
     if (!isFinite(n) || n < 1) return null;
     return Math.min(n, total) - 1;
   }
+
+  // 뒤로/앞으로: 애니메이션 없이 그 쪽으로 옮긴다.
+  function goToFromHistory(p) {
+    if (p === null || p === undefined) p = 0;
+    p = Math.max(0, Math.min(total - 1, p));
+    histPage = spreadOf(p)[0];          // 되돌아간 자리를 새 기준으로 삼는다
+    if (histPage === spreadOf(current)[0]) return;
+    goTo(p, false);
+  }
+
+  window.addEventListener('popstate', function (e) {
+    if (!total) return;
+    markHashByUs();
+    var p = (e.state && typeof e.state.p === 'number') ? e.state.p : hashPage();
+    goToFromHistory(p);
+  });
+
+  // 주소창에서 해시만 직접 고친 경우 (popstate 로 온 것은 hashByUs 가 걸러 낸다)
   window.addEventListener('hashchange', function () {
-    if (hashByUs) return;
+    if (hashByUs || !total) return;
     var p = hashPage();
-    if (p !== null && p !== current) goTo(p, false);
+    if (p !== null && spreadOf(p)[0] !== spreadOf(current)[0]) goToFromHistory(p);
   });
 
   /* ── 패널 ─────────────────────────────────────────── */
@@ -947,6 +1004,7 @@
 
   function closePanel() {
     if (!openPanelId) return;
+    if (openPanelId === 'search') clearHighlight();
     var p = panels[openPanelId];
     p.panel.classList.remove('is-open');
     pressPanelBtns(p, false);
@@ -1051,7 +1109,8 @@
   }
 
   function buildToc() {
-    buildTocInto($('toc-list'), 'toc', false);
+    // 데스크톱 패널도 모바일 시트와 같은 "1. 제목 … 5" 표기를 쓴다
+    buildTocInto($('toc-list'), 'toc', true);
     buildTocInto($('s-toc-list'), 'stoc', true);
     $('toc-filter').addEventListener('input', function () {
       filterToc($('toc-filter').value, $('toc-list'), 'toc', $('toc-empty'));
@@ -1112,7 +1171,7 @@
     var empty = ctx.empty;
     var count = ctx.count;
     out.textContent = '';
-    if (!q) { empty.hidden = true; count.hidden = true; return; }
+    if (!q) { empty.hidden = true; count.hidden = true; clearHighlight(); return; }
 
     var hits = 0;
     var frag = document.createDocumentFragment();
@@ -1198,8 +1257,116 @@
     form.addEventListener('submit', function (e) { e.preventDefault(); input.blur(); runSearch(ctx); });
     out.addEventListener('click', function (e) {
       var b = e.target.closest('.result');
-      if (b) jumpFromPanel(parseInt(b.dataset.page, 10));
+      if (!b) return;
+      var pg = parseInt(b.dataset.page, 10);
+      // 먼저 옮기고(모바일은 시트가 닫히며 하이라이트가 지워진다) 그 다음에 칠한다
+      jumpFromPanel(pg);
+      highlightSearch(pg, norm(input.value));
     });
+  }
+
+  /* ── 검색어 하이라이트 ────────────────────────────── */
+  // search.json 의 words = [[x0,y0,x1,y1,"단어"], …] (단면 기준 0~1 정규화 좌표).
+  // text 는 words 를 공백 하나로 이어 붙인 것이므로, 문자 위치 → 단어 인덱스를
+  // 미리 적어 두면 검색이 맞은 구간을 그대로 단어 상자로 되짚을 수 있다.
+  function wordSpans(words, raw) {
+    var of = new Array(raw.length);
+    var p = 0, i, k;
+    for (i = 0; i < words.length; i++) {
+      var len = String(words[i][4]).length;
+      for (k = 0; k < len && p < of.length; k++) of[p++] = i;
+      if (p < of.length) of[p++] = -1;      // 단어 사이 공백
+    }
+    while (p < of.length) of[p++] = -1;
+    return of;
+  }
+
+  // 한 쪽 안에서 q 가 맞는 모든 자리를 단어 인덱스 목록으로 (부분 일치도 단어 전체)
+  function hitWords(rec, q) {
+    var out = [];
+    if (!q || !rec || !rec.words || !rec.words.length || !rec.wordOf) return out;
+    var at = 0, found;
+    while ((found = rec.norm.indexOf(q, at)) !== -1) {
+      var s = rec.map[Math.min(found, rec.map.length - 1)];
+      var e = rec.map[Math.min(found + q.length - 1, rec.map.length - 1)];
+      for (var i = s; i <= e && i < rec.wordOf.length; i++) {
+        var w = rec.wordOf[i];
+        if (w >= 0 && out.indexOf(w) === -1) out.push(w);
+      }
+      at = found + Math.max(1, q.length);
+    }
+    out.sort(function (a, b) { return a - b; });
+    return out;
+  }
+
+  var hl = { page: -1, boxes: [] };
+  var HL_PAD = 0.004;      // 글자 가장자리가 잘려 보이지 않게 아주 조금 넓힌다
+
+  function hlNode(boxes) {
+    var d = document.createElement('div');
+    d.className = 'hl';
+    d.setAttribute('aria-hidden', 'true');
+    for (var i = 0; i < boxes.length; i++) {
+      var b = boxes[i];
+      var s = document.createElement('i');
+      s.style.left = ((b[0] - HL_PAD) * 100) + '%';
+      s.style.top = ((b[1] - HL_PAD) * 100) + '%';
+      s.style.width = ((b[2] - b[0] + HL_PAD * 2) * 100) + '%';
+      s.style.height = ((b[3] - b[1] + HL_PAD * 2) * 100) + '%';
+      d.appendChild(s);
+    }
+    return d;
+  }
+
+  // 얹은 노드를 직접 들고 있는다 — 쪽 요소는 화면 밖(attic)으로 옮겨 다니므로
+  // document 에서 다시 찾는 방식으로는 회수되지 않는 것이 생긴다.
+  var hlNodes = [];
+
+  function clearHlNodes() {
+    for (var i = 0; i < hlNodes.length; i++) {
+      if (hlNodes[i].parentNode) hlNodes[i].parentNode.removeChild(hlNodes[i]);
+    }
+    hlNodes = [];
+  }
+
+  function putHl(host) {
+    var n = hlNode(hl.boxes);
+    host.appendChild(n);
+    hlNodes.push(n);
+  }
+
+  function paintHighlight() {
+    clearHlNodes();
+    if (hl.page < 0 || !hl.boxes.length) return;
+    if (mobileMode) {
+      // 넘기는 중에는 겹이 따로 그려지므로 가만히 있을 때만 얹는다
+      if (mf.root && current === hl.page && !mf.animating && !mf.dir) putHl(mf.root);
+      return;
+    }
+    var d = pageEls[hl.page];
+    if (d) putHl(d);
+  }
+
+  function clearHighlight() {
+    if (hl.page < 0) return;
+    hl.page = -1;
+    hl.boxes = [];
+    clearHlNodes();
+  }
+
+  function highlightSearch(pageIdx, q) {
+    var rec = null;
+    for (var i = 0; i < searchIndex.length; i++) {
+      if (searchIndex[i].page - 1 === pageIdx) { rec = searchIndex[i]; break; }
+    }
+    if (!rec) { clearHighlight(); return; }
+    var idxs = hitWords(rec, q);
+    hl.page = pageIdx;
+    hl.boxes = idxs.map(function (n) {
+      var w = rec.words[n];
+      return [w[0], w[1], w[2], w[3]];
+    });
+    paintHighlight();
   }
 
   function wireSearch() {
@@ -1211,8 +1378,10 @@
   var zoom = { scale: 2, tx: 0, ty: 0, baseW: 0, baseH: 0, min: 1, max: 4 };
   function isZoomOpen() { return !el.zoom.hidden; }
 
-  function fillZoom() {
+  // keepScale: 확대한 채 쪽만 바꿀 때 현재 배율을 그대로 둔다
+  function fillZoom(keepScale) {
     var s = spreadOf(current);
+    var keep = zoom.scale;
     el.zoomCanvas.textContent = '';
     for (var i = 0; i < s.length; i++) {
       var img = document.createElement('img');
@@ -1221,7 +1390,20 @@
       img.draggable = false;
       el.zoomCanvas.appendChild(img);
     }
-    fitZoom(true);
+    fitZoom(true, keepScale ? keep : 2);
+    paintZoomNav();
+  }
+
+  function paintZoomNav() {
+    var first = atFirst(), last = atLast();
+    [$('zoom-prev'), $('zm-prev')].forEach(function (b) { if (b) b.disabled = first; });
+    [$('zoom-next'), $('zm-next')].forEach(function (b) { if (b) b.disabled = last; });
+  }
+
+  // 확대한 채 이전/다음 쪽으로. 배율은 onPageChange → fillZoom(true) 가 지킨다
+  function zoomStep(dir) {
+    if (!isZoomOpen()) return;
+    dir > 0 ? flipNext() : flipPrev();
   }
 
   function fitZoom(reset, scale) {
@@ -1292,6 +1474,12 @@
     zoomBtns.forEach(function (b) { if (b) b.addEventListener('click', toggleZoom); });
     $('zoom-close').addEventListener('click', closeZoom);
     $('zm-exit').addEventListener('click', closeZoom);
+    [$('zoom-prev'), $('zm-prev')].forEach(function (b) {
+      if (b) b.addEventListener('click', function () { zoomStep(-1); });
+    });
+    [$('zoom-next'), $('zm-next')].forEach(function (b) {
+      if (b) b.addEventListener('click', function () { zoomStep(1); });
+    });
     $('zm-in').addEventListener('click', function () {
       zoomAt(zoom.scale + 0.5, el.zoomView.clientWidth / 2, el.zoomView.clientHeight / 2);
     });
@@ -1641,11 +1829,28 @@
 
   function isShareOpen() { return !$('share').hidden; }
 
+  // 여름호 addCurrentPage:No 와 같이 기본은 '현재 쪽 미포함' 링크다.
+  function shareUrl() {
+    var base = location.origin + location.pathname + location.search;
+    var box = $('share-page');
+    if (box && box.checked) base += '#p=' + (spreadOf(current)[0] + 1);
+    return base;
+  }
+
+  function paintShare() {
+    var url = shareUrl();
+    $('share-url').value = url;
+    var box = $('share-page');
+    $('share-hint').textContent = (box && box.checked)
+      ? '지금 보고 있는 쪽으로 바로 열리는 링크입니다.'
+      : '책 첫 쪽으로 열리는 링크입니다.';
+    drawQR(url);
+    return url;
+  }
+
   function openShare() {
     closePanel();
-    var url = location.href;
-    $('share-url').value = url;
-    drawQR(url);
+    paintShare();
     $('share').hidden = false;
     el.scrim.hidden = false;
     requestAnimationFrame(function () { el.scrim.classList.add('is-on'); });
@@ -1704,20 +1909,63 @@
     } catch (e) { fullUnsupported(); }
   }
 
+  /* ── 데스크톱 첫 진입 안내 ────────────────────────── */
+  var fsPromptTimer = null;
+
+  function hideFsPrompt() {
+    if (!el.fsPrompt || el.fsPrompt.hidden) return;
+    clearTimeout(fsPromptTimer);
+    el.fsPrompt.classList.remove('is-on');
+    setTimeout(function () { el.fsPrompt.hidden = true; }, 300);
+  }
+
+  function showFsPrompt() {
+    if (!el.fsPrompt) return;
+    if (window.innerWidth < SPREAD_MIN) return;                 // 데스크톱 전용
+    if (el.fsPrompt.hidden === false) return;
+    if (document.querySelector('[data-act="full"]:not([hidden])') === null) return;
+    if (!onceThisSession(FS_HINT_KEY)) return;
+    el.fsPrompt.hidden = false;
+    requestAnimationFrame(function () { el.fsPrompt.classList.add('is-on'); });
+    fsPromptTimer = setTimeout(hideFsPrompt, FS_HINT_MS);
+  }
+
+  function wireFsPrompt() {
+    if (!el.fsPrompt) return;
+    el.fsPrompt.addEventListener('click', function () {
+      hideFsPrompt();
+      doFullscreen();
+    });
+  }
+
+  function shareTitle() { return (book && book.title) || document.title; }
+
+  function nativeShare(url, onFail) {
+    var p;
+    try { p = navigator.share({ title: shareTitle(), url: url }); }
+    catch (e) { return false; }
+    if (p && p.catch) {
+      p.catch(function (err) {
+        // 사용자가 직접 닫은 경우는 실패로 치지 않는다
+        if (err && (err.name === 'AbortError' || err.name === 'NotAllowedError')) return;
+        if (onFail) onFail();
+        else toast('공유하지 못했습니다', 2200);
+      });
+    }
+    return true;
+  }
+
+  function mailShare(url) {
+    var subject = encodeURIComponent(shareTitle());
+    var body = encodeURIComponent(shareTitle() + '\n' + url);
+    location.href = 'mailto:?subject=' + subject + '&body=' + body;
+  }
+
   function doShare() {
-    var url = location.href;
-    var data = { title: (book && book.title) || document.title, url: url };
-    if (navigator.share) {
-      // 지원 브라우저는 OS 공유 시트(카카오톡 등)로 넘긴다
-      var p;
-      try { p = navigator.share(data); } catch (e) { openShare(); return; }
-      if (p && p.catch) {
-        p.catch(function (err) {
-          if (err && (err.name === 'AbortError' || err.name === 'NotAllowedError')) return;
-          openShare();
-        });
-      }
-    } else openShare();
+    // 모바일은 OS 공유 시트(카카오톡 등)가 기대되는 길이라 바로 넘긴다.
+    // 데스크톱은 QR·링크·현재 쪽 포함 선택이 있는 공유창을 연다 (그 안에도 공유 단추가 있다).
+    if (mobileMode && navigator.share && nativeShare(shareUrl(), openShare)) return;
+    openShare();
   }
 
   function wireMore() {
@@ -1755,6 +2003,14 @@
     $('share-close').addEventListener('click', closeShare);
     $('sound-close').addEventListener('click', closeSound);
     $('share-copy').addEventListener('click', function () { copyLink($('share-url').value); });
+    $('share-page').addEventListener('change', paintShare);
+    $('share-mail').addEventListener('click', function () { mailShare(shareUrl()); });
+    var native = $('share-native');
+    if (navigator.share) {
+      native.hidden = false;
+      native.addEventListener('click', function () { nativeShare(shareUrl()); });
+    }
+    wireFsPrompt();
   }
 
   /* ── 모바일 하단 바 배선 ──────────────────────────── */
@@ -1778,8 +2034,12 @@
         if (e.key === 'Escape') { t.blur(); }
         return;
       }
-      // 확대 중에는 넘김을 막는다
-      if (isZoomOpen() && e.key !== 'Escape') return;
+      // 확대 중에도 좌우 화살표로는 쪽을 바꾼다 (배율 유지). 그 밖의 단축키는 막는다
+      if (isZoomOpen()) {
+        if (e.key === 'ArrowRight' || e.key === 'PageDown') { zoomStep(1); e.preventDefault(); return; }
+        if (e.key === 'ArrowLeft' || e.key === 'PageUp') { zoomStep(-1); e.preventDefault(); return; }
+        if (e.key !== 'Escape') return;
+      }
       switch (e.key) {
         case 'ArrowRight': case 'PageDown': flipNext(); e.preventDefault(); break;
         case 'ArrowLeft': case 'PageUp': flipPrev(); e.preventDefault(); break;
@@ -1872,7 +2132,11 @@
       return Promise.all(extras).then(function (res) {
         searchIndex = (res[0] || []).map(function (r) {
           var m = normWithMap(r.text);
-          return { page: r.page, raw: m.raw, norm: m.norm, map: m.map };
+          var words = r.words || [];
+          return {
+            page: r.page, raw: m.raw, norm: m.norm, map: m.map,
+            words: words, wordOf: wordSpans(words, m.raw)
+          };
         });
         tocData = (res[1] || []).filter(function (t) { return t && t.title && t.page; });
 
@@ -1916,6 +2180,8 @@
         if (window.innerWidth < SPREAD_MIN && prefGet(HINT_KEY, '') !== 'seen') {
           prefSet(HINT_KEY, 'seen');
           setTimeout(function () { toast('화면을 탭하면 전체화면으로 볼 수 있어요', 3000); }, 1000);
+        } else {
+          setTimeout(showFsPrompt, 700);
         }
       });
     }).catch(function (err) {

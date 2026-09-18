@@ -82,6 +82,7 @@
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M5.2 5.2 18.8 18.8M18.8 5.2 5.2 18.8"/></symbol>
     <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 3.6H3.6V9M15 3.6h5.4V9M9 20.4H3.6V15M15 20.4h5.4V15"/></symbol>
     <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M3.6 9H9V3.6M20.4 9H15V3.6M3.6 15H9v5.4M20.4 15H15v5.4"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="m3.6 6.6 8.4 6.2 8.4-6.2"/></symbol>
     <symbol id="i-link" viewBox="0 0 24 24"><path d="M10.4 13.6a3.9 3.9 0 0 0 5.6 0l2.8-2.8a3.9 3.9 0 1 0-5.6-5.6l-1.4 1.4"/><path d="M13.6 10.4a3.9 3.9 0 0 0-5.6 0l-2.8 2.8a3.9 3.9 0 1 0 5.6 5.6l1.4-1.4"/></symbol>
     <symbol id="i-share" viewBox="0 0 24 24">
       <circle cx="18.4" cy="5.6" r="2.8"/><circle cx="5.6" cy="12" r="2.8"/><circle cx="18.4" cy="18.4" r="2.8"/>
@@ -117,6 +118,7 @@
 
   <main class="stage" id="stage" aria-label="전자책 본문">
     <div class="stage__inner" id="stage-inner"></div>
+    <button class="fsprompt" id="fsprompt" type="button" hidden>클릭하면 전체화면으로 볼 수 있어요</button>
   </main>
 
   <button class="nav nav--prev" id="btn-prev" type="button" aria-label="이전 장">
@@ -195,7 +197,11 @@
     <button class="dtool" id="db-search" type="button" aria-pressed="false" aria-label="찾기" title="찾기">
       <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
     </button>
-    <p class="deskbar__pager" aria-live="polite"><span id="db-cur">1</span><span class="pager__sep">/</span><span id="db-total">76</span></p>
+    <p class="deskbar__pager" aria-live="polite">
+      <button class="pager__btn" id="db-pagelabel" type="button" aria-label="페이지 번호를 눌러 이동"><span id="db-cur">1</span><span class="pager__sep">/</span><span id="db-total">76</span></button>
+      <input class="pager__input" id="db-pageinput" type="text" inputmode="numeric" pattern="[0-9]*"
+             autocomplete="off" aria-label="이동할 페이지 번호" hidden>
+    </p>
     <div class="slider" id="db-slider-wrap">
       <input type="range" id="db-slider" min="0" max="75" step="1" value="0" aria-label="페이지 이동">
       <div class="slider__preview" id="db-preview" hidden>
@@ -348,15 +354,24 @@
       <div class="zoom__canvas" id="zoom-canvas"></div>
     </div>
     <div class="zoom__mbar">
+      <button class="zmbtn" id="zm-prev" type="button" aria-label="이전 쪽">
+        <svg class="icon" aria-hidden="true"><use href="#i-prev"></use></svg>
+      </button>
       <button class="zmbtn" id="zm-out" type="button" aria-label="축소">
         <svg class="icon" aria-hidden="true"><use href="#i-minus"></use></svg>
       </button>
       <button class="zmbtn" id="zm-in" type="button" aria-label="더 확대">
         <svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg>
       </button>
+      <button class="zmbtn" id="zm-next" type="button" aria-label="다음 쪽">
+        <svg class="icon" aria-hidden="true"><use href="#i-next"></use></svg>
+      </button>
       <button class="zmbtn zmbtn--exit" id="zm-exit" type="button">확대 종료</button>
     </div>
     <div class="zoom__bar">
+      <button class="zbtn" id="zoom-prev" type="button" aria-label="이전 쪽"><svg class="icon" aria-hidden="true"><use href="#i-prev"></use></svg></button>
+      <button class="zbtn" id="zoom-next" type="button" aria-label="다음 쪽"><svg class="icon" aria-hidden="true"><use href="#i-next"></use></svg></button>
+      <span class="zoom__div" aria-hidden="true"></span>
       <button class="zbtn" id="zoom-out" type="button" aria-label="축소"><svg class="icon" aria-hidden="true"><use href="#i-minus"></use></svg></button>
       <input type="range" id="zoom-range" min="100" max="400" step="5" value="200" aria-label="확대 배율">
       <button class="zbtn" id="zoom-in" type="button" aria-label="더 확대"><svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg></button>
@@ -394,11 +409,23 @@
       <h2 class="share__title" id="share-title">공유</h2>
       <button class="panel__close" type="button" id="share-close" aria-label="닫기"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button>
     </div>
-    <p class="share__hint">지금 보고 있는 쪽으로 바로 열리는 링크입니다.</p>
+    <p class="share__hint" id="share-hint">책 첫 쪽으로 열리는 링크입니다.</p>
     <div class="share__qr" id="share-qr" aria-label="링크 QR 코드"></div>
     <div class="share__row">
       <input type="text" id="share-url" readonly aria-label="공유 링크">
       <button class="share__copy" type="button" id="share-copy">복사</button>
+    </div>
+    <label class="share__check">
+      <input type="checkbox" id="share-page">
+      <span>현재 페이지 포함</span>
+    </label>
+    <div class="share__acts">
+      <button class="share__act" type="button" id="share-native" hidden>
+        <svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg><span>공유하기</span>
+      </button>
+      <button class="share__act" type="button" id="share-mail">
+        <svg class="icon" aria-hidden="true"><use href="#i-mail"></use></svg><span>이메일</span>
+      </button>
     </div>
   </div>
 
